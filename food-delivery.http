@@ -1,14 +1,22 @@
 ### REST API TESTING FOR FOOD DELIVERY SYSTEM
 ### Save this as test.http or food-delivery-tests.http
 
-@baseUrl = http://localhost:3000
+@baseUrl = http://localhost:8000
 @adminEmail = admin@gmail.com
 @adminPassword = admin1234567
-@customerEmail = customer@example.com
+@customerEmail = customer@gmail.com
 @customerPassword = customer123
 @restaurantEmail = restaurant@example.com
 @restaurantPassword = restaurant123
 
+### Run Migrations
+POST {{baseUrl}}/migrate
+
+### Check Migration Status
+GET {{baseUrl}}/migration-status
+
+### Run Database Seed (after migrations)
+GET {{baseUrl}}/seed/all
 
 ### ----------------------------
 ### 1. AUTHENTICATION TESTS
