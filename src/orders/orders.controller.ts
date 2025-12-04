@@ -1,3 +1,4 @@
+// orders/orders.controller.ts
 import {
   Body,
   Controller,
@@ -9,24 +10,30 @@ import {
   Query,
   ParseIntPipe,
   DefaultValuePipe,
+  Headers,
 } from '@nestjs/common';
 import { OrderService } from './orders.service';
 import { OrderStatus } from './entities/order.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
-import { AssignRiderDto } from './dto/assign-order.dto';
-import { UpdateOrderStatusLogDto } from './../order_status_logs/dto/update-order_status_log.dto';
+import { AssignRiderDto } from './dto/assign-rider.dto';
+import { UpdateStatusDto } from './dto/update-status.dto';
 import { SubmitRatingDto } from './dto/submit-rating.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { OrderQueryDto } from './dto/order-query.dto';
+import { CreateOrderWithPaymentDto } from './../payments/dto/create-order-with-payment.dto';
+import { PaymentsService } from '../payments/payments.service';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly paymentsService: PaymentsService,
+  ) {}
 
   @Get()
   getAll(@Query() query: OrderQueryDto) {
-    return this.orderService.findAll(query);
+    return this.orderService.findWithFilters(query);
   }
 
   @Get('stats')
@@ -46,6 +53,14 @@ export class OrdersController {
     return this.orderService.getRevenueStats(restaurantId || undefined, days);
   }
 
+  @Get('payment-stats')
+  getPaymentStats(
+    @Query('restaurant_id', new DefaultValuePipe(0), ParseIntPipe)
+    restaurantId: number,
+  ) {
+    return this.orderService.getPaymentStats(restaurantId || undefined);
+  }
+
   @Get(':orderId')
   getOne(@Param('orderId', ParseIntPipe) orderId: number) {
     return this.orderService.findOne(orderId);
@@ -59,6 +74,13 @@ export class OrdersController {
   @Post()
   create(@Body() createOrderDto: CreateOrderDto) {
     return this.orderService.createOrderWithItems(createOrderDto);
+  }
+
+  @Post('create-with-payment')
+  createWithPayment(
+    @Body() createOrderWithPaymentDto: CreateOrderWithPaymentDto,
+  ) {
+    return this.orderService.createOrderWithPayment(createOrderWithPaymentDto);
   }
 
   @Get('customer/:customerId')
@@ -145,6 +167,15 @@ export class OrdersController {
     @Body() cancelOrderDto: CancelOrderDto,
   ) {
     return this.orderService.cancelOrder(orderId, cancelOrderDto.reason);
+  }
+
+  @Post('payment-webhook')
+  async handlePaymentWebhook(
+    @Body() body: any,
+    @Headers('x-paystack-signature') signature: string,
+  ) {
+    // Verify and handle payment webhook
+    return this.paymentsService.handleWebhookEvent(body);
   }
 
   @Delete(':orderId')

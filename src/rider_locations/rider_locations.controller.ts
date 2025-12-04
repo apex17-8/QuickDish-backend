@@ -30,7 +30,7 @@ export class RiderLocationController {
     return this.locationService.getLiveLocation(riderId);
   }
 
-  // Get location history (from DB) - NOW THIS WILL WORK
+  // Get location history (from DB)
   @Get(':riderId/history')
   getLocationHistory(@Param('riderId', ParseIntPipe) riderId: number) {
     return this.locationService.getHistory(riderId);

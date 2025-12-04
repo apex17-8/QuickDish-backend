@@ -1,3 +1,4 @@
+// src/restaurants/restaurants.controller.ts
 import { Controller, Get, Patch, Param, Body, Post } from '@nestjs/common';
 import { RestaurantService } from './restaurants.service';
 import { Restaurant } from './entities/restaurant.entity';
@@ -11,6 +12,12 @@ export class RestaurantController {
   @Get()
   findAll(): Promise<Restaurant[]> {
     return this.restaurantService.findAll();
+  }
+
+  @Get('featured')
+  findFeatured(): Promise<Restaurant[]> {
+    console.log('📞 GET /api/restaurants/featured called');
+    return this.restaurantService.findFeatured();
   }
 
   @Get(':id')

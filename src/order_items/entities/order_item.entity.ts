@@ -11,18 +11,18 @@ import { MenuItem } from '../../menu_items/entities/menu_item.entity';
 @Entity('order_items')
 export class OrderItem {
   @PrimaryGeneratedColumn()
-  order_item_id: number; 
+  order_item_id: number;
 
   @ManyToOne(() => Order, (order) => order.orderItems, {
     nullable: false,
-    onDelete: 'CASCADE', // Delete order items when order is deleted
+    onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'order_id' })
   order: Order;
 
   @ManyToOne(() => MenuItem, {
     nullable: false,
-    eager: true, // Always load menu item details
+    eager: true,
   })
   @JoinColumn({ name: 'menu_item_id' })
   menu_item: MenuItem;
@@ -31,10 +31,10 @@ export class OrderItem {
   quantity: number;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
-  price_at_purchase: number; // Price when ordered (protects against menu price changes)
+  price_at_purchase: number;
 
   @Column({ type: 'text', nullable: true })
-  special_instructions: string; // "No onions", "Extra sauce", etc.
+  special_instructions: string;
 
   // Calculated property (not stored in DB)
   get subtotal(): number {

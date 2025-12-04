@@ -1,4 +1,4 @@
-// src/menu_items/menu_items.controller.ts
+// src/menu_items/menu_items.controller.ts - ADD THIS METHOD
 import {
   Controller,
   Get,
@@ -20,6 +20,13 @@ export class MenuItemsController {
   @Get()
   findAll(): Promise<MenuItem[]> {
     return this.menuItemsService.findAll();
+  }
+
+  // 🔴 ADD THIS METHOD - PUT IT BEFORE @Get(':id')
+  @Get('popular')
+  findPopular(): Promise<MenuItem[]> {
+    console.log('📞 GET /api/menu-items/popular called');
+    return this.menuItemsService.findPopular();
   }
 
   @Get(':id')

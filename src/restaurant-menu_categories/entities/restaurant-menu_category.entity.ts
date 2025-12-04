@@ -5,7 +5,7 @@ import {
   ManyToOne,
   OneToMany,
 } from 'typeorm';
-import { Restaurant } from 'src/restaurants/entities/restaurant.entity';
+import { Restaurant } from '../../restaurants/entities/restaurant.entity';
 import { MenuItem } from '../../menu_items/entities/menu_item.entity';
 
 @Entity('restaurant_menu_categories')
@@ -14,17 +14,13 @@ export class RestaurantMenuCategory {
   category_id: number;
 
   @Column()
-  name: string; // e.g., "Burgers", "Drinks", "Pizza", "Snacks"
+  name: string;
 
   @Column({ nullable: true })
   description?: string;
 
   @Column({ default: true })
   isActive: boolean;
-
-  // ────────────────────────────────
-  // RELATIONSHIPS
-  // ────────────────────────────────
 
   // A restaurant has many menu categories
   @ManyToOne(() => Restaurant, (restaurant) => restaurant.menuCategories, {

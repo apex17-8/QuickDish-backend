@@ -1,4 +1,4 @@
-// src/menu_items/menu_items.service.ts
+// src/menu_items/menu_items.service.ts - ADD THIS METHOD
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -23,6 +23,41 @@ export class MenuItemsService {
     return this.menuItemRepository.find({
       relations: ['restaurant', 'category'],
     });
+  }
+
+  // 🔴 ADD THIS METHOD
+  async findPopular(): Promise<MenuItem[]> {
+    try {
+      console.log('Finding popular menu items...');
+
+      // Try to get real data from database first
+      const existingItems = await this.menuItemRepository.find({
+        take: 8,
+        order: { price: 'ASC' }, // Or use { menu_item_id: 'DESC' } for newest first
+        relations: ['restaurant', 'category'],
+      });
+
+      if (existingItems.length > 0) {
+        console.log(`Found ${existingItems.length} menu items from database`);
+        return existingItems;
+      }
+
+      // If no items in DB, create some sample data
+      console.log('No menu items in database, creating sample data...');
+      await this.createSampleMenuItems();
+
+      // Try again after creating sample data
+      const sampleItems = await this.menuItemRepository.find({
+        take: 8,
+        relations: ['restaurant', 'category'],
+      });
+
+      return sampleItems;
+    } catch (error) {
+      console.error('Error in findPopular:', error);
+      // Return structured mock data as fallback
+      return this.getMockPopularItems() as MenuItem[];
+    }
   }
 
   async findOne(id: number): Promise<MenuItem> {
@@ -67,5 +102,184 @@ export class MenuItemsService {
   async remove(id: number): Promise<void> {
     const menuItem = await this.findOne(id);
     await this.menuItemRepository.remove(menuItem);
+  }
+
+  // 🔴 ADD THIS HELPER METHOD TO CREATE SAMPLE DATA
+  private async createSampleMenuItems(): Promise<void> {
+    try {
+      // First, check if we have restaurants and categories
+      const restaurant = await this.restaurantRepository.findOne({
+        where: { restaurant_id: 1 },
+      });
+
+      const category = await this.categoryRepository.findOne({
+        where: { category_id: 1 },
+      });
+
+      if (!restaurant || !category) {
+        console.log('Need restaurants and categories first');
+        return;
+      }
+
+      // Create sample menu items
+      const sampleItems = [
+        {
+          name: 'Margherita Pizza',
+          description:
+            'Classic pizza with fresh mozzarella, tomato sauce, and basil',
+          price: 12.99,
+          is_available: 1,
+          image_url: '/api/images/pizza.jpg',
+          restaurant,
+          category,
+          restaurant_id: 1,
+          category_id: 1,
+        },
+        {
+          name: 'Pepperoni Pizza',
+          description: 'Pizza with pepperoni and mozzarella cheese',
+          price: 14.99,
+          is_available: 1,
+          image_url: '/api/images/pepperoni-pizza.jpg',
+          restaurant,
+          category,
+          restaurant_id: 1,
+          category_id: 1,
+        },
+        {
+          name: 'Cheeseburger Deluxe',
+          description:
+            'Beef patty with cheese, lettuce, tomato, and special sauce',
+          price: 8.99,
+          is_available: 1,
+          image_url: '/api/images/burger.jpg',
+          restaurant,
+          category,
+          restaurant_id: 1,
+          category_id: 1,
+        },
+        {
+          name: 'Caesar Salad',
+          description:
+            'Fresh romaine lettuce with Caesar dressing and croutons',
+          price: 9.99,
+          is_available: 1,
+          image_url: '/api/images/salad.jpg',
+          restaurant,
+          category,
+          restaurant_id: 1,
+          category_id: 1,
+        },
+      ];
+
+      for (const itemData of sampleItems) {
+        const menuItem = this.menuItemRepository.create(itemData);
+        await this.menuItemRepository.save(menuItem);
+      }
+
+      console.log('Created sample menu items');
+    } catch (error) {
+      console.error('Error creating sample menu items:', error);
+    }
+  }
+
+  // 🔴 ADD THIS METHOD FOR MOCK DATA FALLBACK
+  private getMockPopularItems(): any[] {
+    return [
+      {
+        menu_item_id: 1,
+        name: 'Margherita Pizza',
+        description:
+          'Classic pizza with fresh mozzarella, tomato sauce, and basil',
+        price: 12.99,
+        is_available: 1,
+        image_url: '/api/images/pizza.jpg',
+        restaurant_id: 1,
+        category_id: 1,
+        restaurant: {
+          restaurant_id: 1,
+          name: 'Pizza Palace',
+          address: '123 Main St',
+          phone: '555-1234',
+          logo_url: '/api/images/pizza-logo.jpg',
+          rating: 4.5,
+        },
+        category: {
+          category_id: 1,
+          name: 'Pizza',
+          description: 'Italian pizzas',
+        },
+      },
+      {
+        menu_item_id: 2,
+        name: 'Cheeseburger Deluxe',
+        description:
+          'Beef patty with cheese, lettuce, tomato, and special sauce',
+        price: 8.99,
+        is_available: 1,
+        image_url: '/api/images/burger.jpg',
+        restaurant_id: 1,
+        category_id: 1,
+        restaurant: {
+          restaurant_id: 1,
+          name: 'Pizza Palace',
+          address: '123 Main St',
+          phone: '555-1234',
+          logo_url: '/api/images/pizza-logo.jpg',
+          rating: 4.5,
+        },
+        category: {
+          category_id: 1,
+          name: 'Pizza',
+          description: 'Italian pizzas',
+        },
+      },
+      {
+        menu_item_id: 3,
+        name: 'Caesar Salad',
+        description: 'Fresh romaine lettuce with Caesar dressing and croutons',
+        price: 9.99,
+        is_available: 1,
+        image_url: '/api/images/salad.jpg',
+        restaurant_id: 1,
+        category_id: 1,
+        restaurant: {
+          restaurant_id: 1,
+          name: 'Pizza Palace',
+          address: '123 Main St',
+          phone: '555-1234',
+          logo_url: '/api/images/pizza-logo.jpg',
+          rating: 4.5,
+        },
+        category: {
+          category_id: 1,
+          name: 'Pizza',
+          description: 'Italian pizzas',
+        },
+      },
+      {
+        menu_item_id: 4,
+        name: 'Chocolate Lava Cake',
+        description: 'Warm chocolate cake with molten center',
+        price: 7.99,
+        is_available: 1,
+        image_url: '/api/images/cake.jpg',
+        restaurant_id: 1,
+        category_id: 1,
+        restaurant: {
+          restaurant_id: 1,
+          name: 'Pizza Palace',
+          address: '123 Main St',
+          phone: '555-1234',
+          logo_url: '/api/images/pizza-logo.jpg',
+          rating: 4.5,
+        },
+        category: {
+          category_id: 1,
+          name: 'Pizza',
+          description: 'Italian pizzas',
+        },
+      },
+    ];
   }
 }

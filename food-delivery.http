@@ -1,0 +1,454 @@
+### REST API TESTING FOR FOOD DELIVERY SYSTEM
+### Save this as test.http or food-delivery-tests.http
+
+@baseUrl = http://localhost:3000
+@adminEmail = admin@gmail.com
+@adminPassword = admin1234567
+@customerEmail = customer@example.com
+@customerPassword = customer123
+@restaurantEmail = restaurant@example.com
+@restaurantPassword = restaurant123
+
+
+### ----------------------------
+### 1. AUTHENTICATION TESTS
+### ----------------------------
+
+### Sign Up as Admin
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "mr Admin",
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}",
+  "role": "admin",
+  "phone": "+25470000677"
+}
+
+### Sign In as Admin
+# @name adminLogin
+POST {{baseUrl}}/auth/signin
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+> {%
+  client.global.set("adminAccessToken", response.body.accessToken);
+  client.global.set("adminRefreshToken", response.body.refreshToken);
+  client.global.set("adminId", response.body.user.id);
+%}
+
+### Sign Up as Customer
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "email": "{{customerEmail}}",
+  "password": "{{customerPassword}}",
+  "role": "customer",
+  "phone": "+254711111111"
+}
+
+### Sign In as Customer
+# @name customerLogin
+POST {{baseUrl}}/auth/signin
+Content-Type: application/json
+
+{
+  "email": "{{customerEmail}}",
+  "password": "{{customerPassword}}"
+}
+
+> {%
+  client.global.set("customerAccessToken", response.body.accessToken);
+  client.global.set("customerId", response.body.user.id);
+%}
+
+### Sign Up as Restaurant Owner
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Restaurant Owner",
+  "email": "{{restaurantEmail}}",
+  "password": "{{restaurantPassword}}",
+  "role": "restaurant_owner",
+  "phone": "+254722222222"
+}
+
+### Sign In as Restaurant Owner
+# @name restaurantLogin
+POST {{baseUrl}}/auth/signin
+Content-Type: application/json
+
+{
+  "email": "{{restaurantEmail}}",
+  "password": "{{restaurantPassword}}"
+}
+
+> {%
+  client.global.set("restaurantOwnerAccessToken", response.body.accessToken);
+  client.global.set("restaurantOwnerId", response.body.user.id);
+%}
+
+### Refresh Tokens
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+Authorization: Bearer {{$2b$10$KbmV9JB8ZikEo3N7eBrvCeQOK09U2qGTnGcSLyzIj7pGe7lEz752y}}
+
+{
+  "userId": {{5}}
+}
+
+### ----------------------------
+### 2. USERS TESTS
+### ----------------------------
+
+### Get All Users (Admin only)
+GET {{baseUrl}}/users
+Authorization: Bearer {{adminAccessToken}}
+
+### Get User Profile
+GET {{baseUrl}}/users/{{customerId}}
+Authorization: Bearer {{customerAccessToken}}
+
+### Update User Profile
+PUT {{baseUrl}}/users/{{customerId}}
+Authorization: Bearer {{customerAccessToken}}
+Content-Type: application/json
+
+{
+  "name": "John Doe Updated",
+  "phone": "+254711111112"
+}
+
+### ----------------------------
+### 3. RESTAURANTS TESTS
+### ----------------------------
+
+### Create Restaurant
+# @name createRestaurant
+POST {{baseUrl}}/restaurants
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+Content-Type: application/json
+
+{
+  "name": "Delicious Bites",
+  "email": "delicious@example.com",
+  "phone_number": "+254733333333",
+  "address": "123 Main Street, Nairobi",
+  "description": "Best local cuisine in town",
+  "cuisine_type": "Local",
+  "opening_time": "08:00:00",
+  "closing_time": "22:00:00",
+  "is_active": true
+}
+
+> {%
+  client.global.set("restaurantId", response.body.restaurant_id);
+%}
+
+### Get All Restaurants
+GET {{baseUrl}}/restaurants
+
+### Get Restaurant by ID
+GET {{baseUrl}}/restaurants/{{restaurantId}}
+
+### Update Restaurant
+PUT {{baseUrl}}/restaurants/{{restaurantId}}
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+Content-Type: application/json
+
+{
+  "description": "Updated description - Now serving vegan options!",
+  "closing_time": "23:00:00"
+}
+
+### Get Restaurant Statistics
+GET {{baseUrl}}/restaurants/{{restaurantId}}/stats
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+
+### ----------------------------
+### 4. MENU ITEMS TESTS
+### ----------------------------
+
+### Create Menu Category
+POST {{baseUrl}}/restaurant-menu-categories
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+Content-Type: application/json
+
+{
+  "restaurantId": {{restaurantId}},
+  "name": "Main Courses",
+  "description": "Hearty main dishes"
+}
+
+### Create Menu Item
+# @name createMenuItem
+POST {{baseUrl}}/menu-items
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+Content-Type: application/json
+
+{
+  "restaurant_id": {{restaurantId}},
+  "name": "Beef Burger",
+  "description": "Juicy beef burger with cheese",
+  "price": 12.99,
+  "category_id": 1,
+  "is_available": true,
+  "preparation_time": 15
+}
+
+> {%
+  client.global.set("menuItemId", response.body.menu_item_id);
+%}
+
+### Get All Menu Items for Restaurant
+GET {{baseUrl}}/menu-items/restaurant/{{restaurantId}}
+
+### Get Menu Item by ID
+GET {{baseUrl}}/menu-items/{{menuItemId}}
+
+### Update Menu Item
+PUT {{baseUrl}}/menu-items/{{menuItemId}}
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+Content-Type: application/json
+
+{
+  "price": 13.99,
+  "description": "Updated: Now with special sauce!"
+}
+
+### ----------------------------
+### 5. CUSTOMERS TESTS
+### ----------------------------
+
+### Get Customer Profile
+GET {{baseUrl}}/customers/profile
+Authorization: Bearer {{customerAccessToken}}
+
+### Update Customer Profile
+PUT {{baseUrl}}/customers/profile
+Authorization: Bearer {{customerAccessToken}}
+Content-Type: application/json
+
+{
+  "delivery_address": "456 Customer Street, Nairobi",
+  "preferences": "No spicy food"
+}
+
+### ----------------------------
+### 6. ORDERS TESTS
+### ----------------------------
+
+### Create Order
+# @name createOrder
+POST {{baseUrl}}/orders
+Authorization: Bearer {{customerAccessToken}}
+Content-Type: application/json
+
+{
+  "customer_id": {{customerId}},
+  "restaurant_id": {{restaurantId}},
+  "delivery_address": "456 Customer Street, Nairobi",
+  "notes": "Please include extra napkins",
+  "delivery_latitude": -1.286389,
+  "delivery_longitude": 36.817223,
+  "items": [
+    {
+      "menu_item_id": {{menuItemId}},
+      "quantity": 2,
+      "special_instructions": "No onions please"
+    }
+  ]
+}
+
+> {%
+  client.global.set("orderId", response.body.order_id);
+%}
+
+### Get All Orders (Admin)
+GET {{baseUrl}}/orders
+Authorization: Bearer {{adminAccessToken}}
+
+### Get Order by ID
+GET {{baseUrl}}/orders/{{orderId}}
+Authorization: Bearer {{customerAccessToken}}
+
+### Get Customer Orders
+GET {{baseUrl}}/orders/customer/{{customerId}}
+Authorization: Bearer {{customerAccessToken}}
+
+### Get Restaurant Orders
+GET {{baseUrl}}/orders/restaurant/{{restaurantId}}
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+
+### Update Order Status (Restaurant)
+PUT {{baseUrl}}/orders/{{orderId}}/status
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+Content-Type: application/json
+
+{
+  "status": "accepted"
+}
+
+### Cancel Order
+PUT {{baseUrl}}/orders/{{orderId}}/cancel
+Authorization: Bearer {{customerAccessToken}}
+Content-Type: application/json
+
+{
+  "reason": "Changed my mind"
+}
+
+### Submit Order Rating
+PUT {{baseUrl}}/orders/{{orderId}}/rating
+Authorization: Bearer {{customerAccessToken}}
+Content-Type: application/json
+
+{
+  "rating": 5,
+  "feedback": "Excellent service and food!"
+}
+
+### Get Order Statistics
+GET {{baseUrl}}/orders/stats
+Authorization: Bearer {{adminAccessToken}}
+
+### ----------------------------
+### 7. RIDERS TESTS
+### ----------------------------
+
+### Sign Up as Rider
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "name": "Mike Rider",
+  "email": "rider@example.com",
+  "password": "rider123",
+  "role": "rider",
+  "phone": "+254744444444"
+}
+
+### Sign In as Rider
+# @name riderLogin
+POST {{baseUrl}}/auth/signin
+Content-Type: application/json
+
+{
+  "email": "rider@example.com",
+  "password": "rider123"
+}
+
+> {%
+  client.global.set("riderAccessToken", response.body.accessToken);
+  client.global.set("riderId", response.body.user.id);
+%}
+
+### Create Rider Profile
+POST {{baseUrl}}/riders
+Authorization: Bearer {{riderAccessToken}}
+Content-Type: application/json
+
+{
+  "vehicle_type": "Motorcycle",
+  "vehicle_plate": "KAA 123A",
+  "is_online": true
+}
+
+### Get Available Orders for Riders
+GET {{baseUrl}}/orders/ready
+Authorization: Bearer {{riderAccessToken}}
+
+### Accept Order Delivery
+PUT {{baseUrl}}/orders/{{orderId}}/assign
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+  "rider_id": 1
+}
+
+### Update Delivery Status
+PUT {{baseUrl}}/orders/{{orderId}}/status
+Authorization: Bearer {{riderAccessToken}}
+Content-Type: application/json
+
+{
+  "status": "on_the_way"
+}
+
+### ----------------------------
+### 8. PAYMENTS TESTS
+### ----------------------------
+
+### Initialize Payment
+POST {{baseUrl}}/payments/initialize
+Authorization: Bearer {{customerAccessToken}}
+Content-Type: application/json
+
+{
+  "order_id": {{orderId}},
+  "amount": 25.98,
+  "payment_method": "mpesa"
+}
+
+### Verify Payment
+POST {{baseUrl}}/payments/verify
+Authorization: Bearer {{customerAccessToken}}
+Content-Type: application/json
+
+{
+  "payment_reference": "MPESA12345"
+}
+
+### Get Payment History
+GET {{baseUrl}}/payments/history
+Authorization: Bearer {{customerAccessToken}}
+
+### ----------------------------
+### 9. SEARCH & FILTER TESTS
+### ----------------------------
+
+### Search Restaurants
+GET {{baseUrl}}/restaurants/search?query=pizza
+
+### Search Menu Items
+GET {{baseUrl}}/menu-items/search?query=burger
+
+### Filter Orders
+GET {{baseUrl}}/orders/filter?status=accepted&from_date=2024-01-01&to_date=2024-12-31
+Authorization: Bearer {{adminAccessToken}}
+
+### ----------------------------
+### 10. DASHBOARD & ANALYTICS TESTS
+### ----------------------------
+
+### Get Admin Dashboard Stats
+GET {{baseUrl}}/dashboard/stats
+Authorization: Bearer {{adminAccessToken}}
+
+### Get Revenue Reports
+GET {{baseUrl}}/reports/revenue?days=30
+Authorization: Bearer {{adminAccessToken}}
+
+### Get Order Analytics
+GET {{baseUrl}}/reports/orders?restaurant_id={{restaurantId}}
+Authorization: Bearer {{restaurantOwnerAccessToken}}
+
+### ----------------------------
+### 11. HEALTH CHECKS
+### ----------------------------
+
+### Health Check
+GET {{baseUrl}}/health
+
+### Database Health
+GET {{baseUrl}}/health/db
+

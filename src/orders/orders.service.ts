@@ -1,331 +1,549 @@
+// src/orders/orders.service.ts
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Order, OrderStatus } from './entities/order.entity';
-import { Rider } from '../riders/entities/rider.entity';
-import { MenuItem } from '../menu_items/entities/menu_item.entity';
+import {
+  Repository,
+  Between,
+  LessThan,
+  MoreThan,
+  In,
+  IsNull,
+  Not,
+} from 'typeorm';
+import { Order, OrderStatus, PaymentStatus } from './entities/order.entity';
 import { OrderItem } from '../order_items/entities/order_item.entity';
-import { Restaurant } from '../restaurants/entities/restaurant.entity';
-import { Message } from '../messages/entities/message.entity';
-import { OrderGateway } from '../websockets/gateways/order.gateway';
-import { OrderItemsService } from '../order_items/order_items.service';
-import { CreateOrderItemDto } from '../order_items/dto/create-order_item.dto';
 import { Customer } from '../customers/entities/customer.entity';
+import { Rider } from '../riders/entities/rider.entity';
+import { Restaurant } from '../restaurants/entities/restaurant.entity';
+import { MenuItem } from '../menu_items/entities/menu_item.entity';
+import { OrderStatusLog } from '../order-status-logs/entities/order-status-log.entity';
+import { User } from '../users/entities/user.entity';
+import { CreateOrderDto } from './dto/create-order.dto';
+import { UpdateOrderDto } from './dto/update-order.dto';
+import { OrderQueryDto } from './dto/order-query.dto';
+import { PaymentsService } from '../payments/payments.service';
+import { OrderGateway } from '../websockets/gateways/order.gateway';
+import { OrderTrackingGateway } from '../websockets/gateways/order-tracking.gateway';
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
+
   constructor(
     @InjectRepository(Order)
-    private readonly orderRepo: Repository<Order>,
-
-    @InjectRepository(Rider)
-    private readonly riderRepo: Repository<Rider>,
-
-    @InjectRepository(MenuItem)
-    private readonly menuItemRepo: Repository<MenuItem>,
-
-    @InjectRepository(Restaurant)
-    private readonly restaurantRepo: Repository<Restaurant>,
+    private orderRepository: Repository<Order>,
 
     @InjectRepository(OrderItem)
-    private readonly orderItemRepo: Repository<OrderItem>,
-
-    @InjectRepository(Message)
-    private readonly messageRepo: Repository<Message>,
+    private orderItemRepository: Repository<OrderItem>,
 
     @InjectRepository(Customer)
-    private readonly customerRepo: Repository<Customer>,
+    private customerRepository: Repository<Customer>,
 
-    private readonly orderGateway: OrderGateway,
+    @InjectRepository(Rider)
+    private riderRepository: Repository<Rider>,
 
-    private readonly orderItemsService: OrderItemsService,
+    @InjectRepository(Restaurant)
+    private restaurantRepository: Repository<Restaurant>,
+
+    @InjectRepository(MenuItem)
+    private menuItemRepository: Repository<MenuItem>,
+
+    @InjectRepository(OrderStatusLog)
+    private statusLogRepository: Repository<OrderStatusLog>,
+
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+
+    private paymentsService: PaymentsService,
+    private orderGateway: OrderGateway,
+    private orderTrackingGateway: OrderTrackingGateway,
   ) {}
 
-  // -----------------------------
-  // GET ALL ORDERS
-  // -----------------------------
+  // ==================== CRUD OPERATIONS ====================
+
+  async createOrderWithItems(createOrderDto: CreateOrderDto): Promise<Order> {
+    const { customer_id, restaurant_id, items, ...orderData } = createOrderDto;
+
+    // Validate customer exists
+    const customer = await this.customerRepository.findOne({
+      where: { customer_id },
+      relations: ['user'],
+    });
+    if (!customer) {
+      throw new NotFoundException(`Customer with ID ${customer_id} not found`);
+    }
+
+    // Validate restaurant exists
+    const restaurant = await this.restaurantRepository.findOne({
+      where: { restaurant_id },
+    });
+    if (!restaurant) {
+      throw new NotFoundException(
+        `Restaurant with ID ${restaurant_id} not found`,
+      );
+    }
+
+    // Validate all menu items exist and are available
+    const menuItemIds = items.map((item) => item.menu_item_id);
+    const menuItems = await this.menuItemRepository.find({
+      where: { menu_item_id: In(menuItemIds) },
+    });
+
+    if (menuItems.length !== items.length) {
+      const foundIds = menuItems.map((item) => item.menu_item_id);
+      const missingIds = menuItemIds.filter((id) => !foundIds.includes(id));
+      throw new NotFoundException(
+        `Menu items not found: ${missingIds.join(', ')}`,
+      );
+    }
+
+    const unavailableItems = menuItems.filter((item) => !item.is_available);
+    if (unavailableItems.length > 0) {
+      throw new BadRequestException(
+        `The following items are not available: ${unavailableItems.map((item) => item.name).join(', ')}`,
+      );
+    }
+
+    // Create order
+    const order = this.orderRepository.create({
+      ...orderData,
+      customer,
+      restaurant,
+      status: OrderStatus.Pending,
+      payment_status: PaymentStatus.Pending,
+      total_price: 0,
+    });
+
+    const savedOrder = await this.orderRepository.save(order);
+
+    // Create order items
+    const orderItems = items.map((itemDto) => {
+      const menuItem = menuItems.find(
+        (mi) => mi.menu_item_id === itemDto.menu_item_id,
+      );
+
+      if (!menuItem) {
+        throw new NotFoundException(
+          `Menu item with ID ${itemDto.menu_item_id} not found`,
+        );
+      }
+
+      return this.orderItemRepository.create({
+        order: savedOrder,
+        menu_item: menuItem,
+        quantity: itemDto.quantity,
+        price_at_purchase: menuItem.price,
+        special_instructions: itemDto.special_instructions,
+      });
+    });
+
+    await this.orderItemRepository.save(orderItems);
+
+    // Calculate and update total
+    await this.calculateTotal(savedOrder.order_id);
+
+    // Log status change
+    await this.logStatusChange(
+      savedOrder.order_id,
+      null,
+      OrderStatus.Pending,
+      'Order created',
+      customer.user?.user_id,
+    );
+
+    // Emit WebSocket event
+    this.orderGateway.broadcastOrderUpdate({
+      orderId: savedOrder.order_id,
+      type: 'statusUpdate',
+      status: OrderStatus.Pending,
+    });
+
+    return this.findOrderWithDetails(savedOrder.order_id);
+  }
+
+  async createOrderWithPayment(data: any) {
+    // Create order first
+    const order = await this.createOrderWithItems({
+      customer_id: data.customer_id,
+      restaurant_id: data.restaurant_id,
+      delivery_address: data.delivery_address,
+      notes: data.notes,
+      delivery_latitude: data.delivery_latitude,
+      delivery_longitude: data.delivery_longitude,
+      items: data.items,
+    });
+
+    // Initialize payment
+    const payment = await this.paymentsService.initializePayment({
+      user_id: data.customer_id,
+      order_id: order.order_id,
+      email: data.email,
+      amount: order.total_price,
+      callback_url: data.callback_url,
+    });
+
+    return { order, payment };
+  }
+
   async findAll(): Promise<Order[]> {
-    return this.orderRepo.find({
-      relations: ['rider', 'restaurant', 'orderItems', 'messages', 'customer'],
+    return this.orderRepository.find({
+      relations: [
+        'customer.user',
+        'restaurant',
+        'rider.user',
+        'orderItems.menu_item',
+      ],
       order: { created_at: 'DESC' },
     });
   }
 
-  // -----------------------------
-  // GET ONE ORDER
-  // -----------------------------
-  async findOne(orderId: number): Promise<Order> {
-    const order = await this.orderRepo.findOne({
-      where: { order_id: orderId },
-      relations: ['rider', 'restaurant', 'orderItems', 'messages', 'customer'],
+  async findOne(id: number): Promise<Order> {
+    const order = await this.orderRepository.findOne({
+      where: { order_id: id },
+      relations: ['customer.user', 'restaurant', 'rider.user'],
     });
-    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID ${id} not found`);
+    }
+
     return order;
   }
 
-  // -----------------------------
-  // GET ORDER WITH DETAILED ITEMS
-  // -----------------------------
-  async findOrderWithDetails(orderId: number): Promise<Order> {
-    const order = await this.orderRepo.findOne({
-      where: { order_id: orderId },
+  async findOrderWithDetails(id: number) {
+    const order = await this.orderRepository.findOne({
+      where: { order_id: id },
       relations: [
-        'customer',
+        'customer.user',
         'restaurant',
-        'rider',
-        'orderItems',
+        'rider.user',
         'orderItems.menu_item',
+        'statusLogs',
+        'messages.sender',
+        'payments',
       ],
     });
 
     if (!order) {
-      throw new NotFoundException(`Order ${orderId} not found`);
+      throw new NotFoundException(`Order with ID ${id} not found`);
     }
 
-    return order;
+    // Add calculated properties
+    const orderWithExtras = {
+      ...order,
+      calculated_total: order.total_price,
+      can_be_cancelled: this.canOrderBeCancelled(order),
+      can_confirm_delivery: this.canConfirmDelivery(order),
+      assignment_expired: this.isAssignmentExpired(order),
+      estimated_delivery_time: this.calculateEstimatedDeliveryTime(order),
+    };
+
+    return orderWithExtras;
   }
 
-  // -----------------------------
-  // CREATE ORDER WITH ITEMS
-  // -----------------------------
-  async createOrderWithItems(createOrderDto: {
-    customer_id: number;
-    restaurant_id: number;
-    delivery_address: string;
-    notes?: string;
-    items: CreateOrderItemDto[];
-  }): Promise<Order> {
-    // Verify restaurant exists
-    const restaurant = await this.restaurantRepo.findOne({
-      where: { restaurant_id: createOrderDto.restaurant_id },
-    });
-    if (!restaurant) {
-      throw new NotFoundException(
-        `Restaurant ${createOrderDto.restaurant_id} not found`,
+  async update(id: number, updateOrderDto: UpdateOrderDto): Promise<Order> {
+    const order = await this.findOne(id);
+
+    // Check if order can be updated
+    if (!this.canOrderBeUpdated(order)) {
+      throw new BadRequestException(
+        'Order cannot be updated in its current status',
       );
     }
 
-    // Verify customer exists
-    const customer = await this.customerRepo.findOne({
-      where: { customer_id: createOrderDto.customer_id },
-    });
+    Object.assign(order, updateOrderDto);
+    const updatedOrder = await this.orderRepository.save(order);
 
-    if (!customer) {
-      throw new NotFoundException(
-        `Customer ${createOrderDto.customer_id} not found`,
-      );
+    // Recalculate total if items were modified
+    if (updateOrderDto.items) {
+      await this.calculateTotal(id);
     }
 
-    // Create the order first
-    const order = this.orderRepo.create({
-      customer: customer,
-      restaurant: restaurant,
-      delivery_address: createOrderDto.delivery_address,
-      notes: createOrderDto.notes,
-      status: OrderStatus.Pending,
-      total_price: 0, // Will be calculated by order items
-    });
-
-    const savedOrder = await this.orderRepo.save(order);
-
-    try {
-      // Create order items using the service
-      await this.orderItemsService.createBulk(
-        savedOrder.order_id,
-        createOrderDto.items,
-      );
-
-      // Notify restaurant about new order
-      this.orderGateway.broadcastOrderUpdate({
-        orderId: savedOrder.order_id,
-        type: 'statusUpdate',
-        status: OrderStatus.Pending,
-      });
-
-      // Return the complete order with items
-      return this.findOrderWithDetails(savedOrder.order_id);
-    } catch (error) {
-      // If item creation fails, delete the order to maintain consistency
-      await this.orderRepo.delete(savedOrder.order_id);
-      throw error;
-    }
+    return updatedOrder;
   }
 
-  // -----------------------------
-  // ASSIGN RIDER
-  // -----------------------------
+  async remove(id: number): Promise<void> {
+    const order = await this.findOne(id);
+
+    if (
+      order.status !== OrderStatus.Cancelled &&
+      order.status !== OrderStatus.Pending
+    ) {
+      throw new BadRequestException(
+        'Only pending or cancelled orders can be deleted',
+      );
+    }
+
+    await this.orderRepository.softDelete(id);
+  }
+
+  // ==================== FILTERING & QUERYING ====================
+
+  async findWithFilters(query: OrderQueryDto) {
+    const {
+      status,
+      customer_id,
+      restaurant_id,
+      rider_id,
+      from_date,
+      to_date,
+      page = 1,
+      limit = 10,
+    } = query;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    if (status) where.status = status;
+    if (customer_id) where.customer = { customer_id };
+    if (restaurant_id) where.restaurant = { restaurant_id };
+    if (rider_id) where.rider = { rider_id };
+    if (from_date && to_date) {
+      where.created_at = Between(new Date(from_date), new Date(to_date));
+    } else if (from_date) {
+      where.created_at = MoreThan(new Date(from_date));
+    } else if (to_date) {
+      where.created_at = LessThan(new Date(to_date));
+    }
+
+    const [orders, total] = await this.orderRepository.findAndCount({
+      where,
+      relations: ['customer.user', 'restaurant', 'rider.user'],
+      order: { created_at: 'DESC' },
+      skip,
+      take: limit,
+    });
+
+    return {
+      orders,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async findByCustomer(customerId: number): Promise<Order[]> {
+    return this.orderRepository.find({
+      where: { customer: { customer_id: customerId } },
+      relations: ['restaurant', 'rider.user', 'orderItems.menu_item'],
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async findByRestaurant(restaurantId: number): Promise<Order[]> {
+    return this.orderRepository.find({
+      where: { restaurant: { restaurant_id: restaurantId } },
+      relations: ['customer.user', 'rider.user', 'orderItems.menu_item'],
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async findByRider(riderId: number): Promise<Order[]> {
+    return this.orderRepository.find({
+      where: { rider: { rider_id: riderId } },
+      relations: ['customer.user', 'restaurant', 'orderItems.menu_item'],
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async findPendingForRestaurant(restaurantId: number): Promise<Order[]> {
+    return this.orderRepository.find({
+      where: {
+        restaurant: { restaurant_id: restaurantId },
+        status: In([
+          OrderStatus.Pending,
+          OrderStatus.Accepted,
+          OrderStatus.Preparing,
+        ]),
+      },
+      relations: ['customer.user', 'orderItems.menu_item'],
+      order: { created_at: 'ASC' },
+    });
+  }
+
+  async findReadyOrders(): Promise<Order[]> {
+    return this.orderRepository.find({
+      where: {
+        status: OrderStatus.Ready,
+        rider: IsNull(),
+      },
+      relations: ['restaurant', 'customer.user'],
+      order: { created_at: 'ASC' },
+    });
+  }
+
+  async findOrdersNeedingAssignment(): Promise<Order[]> {
+    return this.orderRepository.find({
+      where: {
+        status: OrderStatus.Ready,
+        rider: IsNull(),
+        requires_manual_assignment: false,
+        assigned_at: IsNull(),
+      },
+      relations: ['restaurant', 'customer.user'],
+      order: { created_at: 'ASC' },
+    });
+  }
+
+  // ==================== ORDER MANAGEMENT ====================
+
   async assignRider(orderId: number, riderId: number): Promise<Order> {
     const order = await this.findOne(orderId);
-    const rider = await this.riderRepo.findOne({
+    const rider = await this.riderRepository.findOne({
       where: { rider_id: riderId },
       relations: ['user'],
     });
 
     if (!rider) {
-      throw new NotFoundException(`Rider ${riderId} not found`);
+      throw new NotFoundException(`Rider with ID ${riderId} not found`);
     }
 
     if (!rider.is_online) {
-      throw new BadRequestException(`Rider ${riderId} is not online`);
+      throw new BadRequestException('Rider is not online');
     }
 
-    order.rider = rider;
-    order.assigned_at = new Date();
-    const savedOrder = await this.orderRepo.save(order);
+    if (order.rider && order.rider.rider_id === riderId) {
+      throw new BadRequestException('Rider is already assigned to this order');
+    }
 
-    // Notify about rider assignment
+    const previousStatus = order.status;
+    order.rider = rider;
+    order.status = OrderStatus.OnRoute;
+    order.assigned_at = new Date();
+    order.assignment_attempts = 0;
+
+    const updatedOrder = await this.orderRepository.save(order);
+
+    // Log status change
+    await this.logStatusChange(
+      orderId,
+      previousStatus,
+      OrderStatus.OnRoute,
+      `Rider ${rider.user.name} assigned`,
+      rider.user.user_id,
+    );
+
+    // Emit WebSocket events
     this.orderGateway.broadcastOrderUpdate({
       orderId,
       type: 'riderAssigned',
       riderId,
     });
 
-    // Notify rider about new assignment
-    // You can implement rider notification logic here
+    this.orderTrackingGateway.updateStatus({
+      orderId,
+      status: OrderStatus.OnRoute,
+    });
 
-    return savedOrder;
+    return updatedOrder;
   }
 
-  // -----------------------------
-  // UPDATE STATUS
-  // -----------------------------
   async updateStatus(orderId: number, status: OrderStatus): Promise<Order> {
     const order = await this.findOne(orderId);
     const previousStatus = order.status;
-    order.status = status;
 
-    // Set timestamps based on status changes
-    if (
-      status === OrderStatus.Accepted &&
-      previousStatus === OrderStatus.Pending
-    ) {
-      order.assigned_at = new Date();
-    } else if (
-      status === OrderStatus.OnRoute &&
-      previousStatus === OrderStatus.Preparing
-    ) {
-      order.picked_up_at = new Date();
+    // Validate status transition
+    if (!this.isValidStatusTransition(previousStatus, status)) {
+      throw new BadRequestException(
+        `Invalid status transition from ${previousStatus} to ${status}`,
+      );
     }
 
-    const savedOrder = await this.orderRepo.save(order);
+    order.status = status;
 
-    // Broadcast status update
+    // Update timestamps based on status
+    switch (status) {
+      case OrderStatus.Accepted:
+        order.accepted_at = new Date();
+        break;
+      case OrderStatus.Ready:
+        order.picked_up_at = new Date();
+        break;
+      case OrderStatus.Delivered:
+        order.picked_up_at = order.picked_up_at || new Date();
+        break;
+    }
+
+    const updatedOrder = await this.orderRepository.save(order);
+
+    // Log status change
+    await this.logStatusChange(
+      orderId,
+      previousStatus,
+      status,
+      'Status updated',
+      undefined,
+    );
+
+    // Emit WebSocket event
     this.orderGateway.broadcastOrderUpdate({
       orderId,
       type: 'statusUpdate',
       status,
     });
 
-    return savedOrder;
+    this.orderTrackingGateway.updateStatus({
+      orderId,
+      status,
+    });
+
+    return updatedOrder;
   }
 
-  // -----------------------------
-  // CALCULATE TOTAL USING ORDERITEMS
-  // -----------------------------
-  async calculateTotal(orderId: number): Promise<Order> {
+  async cancelOrder(orderId: number, reason?: string): Promise<Order> {
     const order = await this.findOne(orderId);
 
-    if (!order.orderItems || order.orderItems.length === 0) {
-      order.total_price = 0;
-      return this.orderRepo.save(order);
+    if (!this.canOrderBeCancelled(order)) {
+      throw new BadRequestException(
+        'Order cannot be cancelled in its current status',
+      );
     }
 
-    const total = order.orderItems.reduce(
-      (sum, item) => sum + item.price_at_purchase * item.quantity,
-      0,
+    const previousStatus = order.status;
+    order.status = OrderStatus.Cancelled;
+
+    const updatedOrder = await this.orderRepository.save(order);
+
+    // Log status change
+    await this.logStatusChange(
+      orderId,
+      previousStatus,
+      OrderStatus.Cancelled,
+      `Order cancelled${reason ? `: ${reason}` : ''}`,
+      undefined,
     );
 
-    order.total_price = total;
-    return this.orderRepo.save(order);
-  }
+    // Emit WebSocket event
+    this.orderGateway.broadcastOrderUpdate({
+      orderId,
+      type: 'statusUpdate',
+      status: OrderStatus.Cancelled,
+    });
 
-  // -----------------------------
-  // CUSTOMER CONFIRMS DELIVERY
-  // -----------------------------
-  async confirmDeliveredByCustomer(orderId: number): Promise<Order> {
-    const order = await this.findOne(orderId);
-
-    if (order.status !== OrderStatus.AwaitingConfirmation) {
-      throw new BadRequestException('Order is not awaiting confirmation');
+    // If payment was made, initiate refund
+    if (order.payment_status === PaymentStatus.Paid) {
+      await this.initiateRefund(orderId, order.total_price);
     }
 
-    order.customer_confirmed = true;
-    await this.orderRepo.save(order);
-
-    this.orderGateway.broadcastOrderUpdate({
-      orderId,
-      type: 'orderDelivered',
-    });
-
-    return this.finalizeDeliveryIfReady(orderId);
+    return updatedOrder;
   }
 
-  // -----------------------------
-  // RIDER CONFIRMS DELIVERY
-  // -----------------------------
-  async confirmDeliveredByRider(orderId: number): Promise<Order> {
-    const order = await this.findOne(orderId);
-
-    if (order.status !== OrderStatus.AwaitingConfirmation) {
-      throw new BadRequestException('Order is not awaiting confirmation');
-    }
-
-    order.rider_confirmed = true;
-    await this.orderRepo.save(order);
-
-    this.orderGateway.broadcastOrderUpdate({
-      orderId,
-      type: 'orderDelivered',
-    });
-
-    return this.finalizeDeliveryIfReady(orderId);
-  }
-
-  // -----------------------------
-  // FINALIZE DELIVERY IF BOTH CONFIRM
-  // -----------------------------
-  async finalizeDeliveryIfReady(orderId: number): Promise<Order> {
-    const order = await this.findOne(orderId);
-
-    if (!order.customer_confirmed || !order.rider_confirmed) {
-      return order; // Not ready yet
-    }
-
-    order.status = OrderStatus.Delivered;
-    const savedOrder = await this.orderRepo.save(order);
-
-    // Auto-clear chat messages after delivery
-    await this.messageRepo.softDelete({ order: { order_id: orderId } });
-
-    // Broadcast final delivery confirmation
-    this.orderGateway.broadcastOrderUpdate({
-      orderId,
-      type: 'orderDelivered',
-    });
-    this.orderGateway.broadcastOrderUpdate({
-      orderId,
-      type: 'chatCleared',
-    });
-
-    return savedOrder;
-  }
-
-  // -----------------------------
-  // SUBMIT RATING
-  // -----------------------------
   async submitRating(
     orderId: number,
     rating: number,
-    feedback: string,
+    feedback?: string,
   ): Promise<Order> {
     const order = await this.findOne(orderId);
 
     if (order.status !== OrderStatus.Delivered) {
-      throw new BadRequestException(`Order must be delivered first`);
+      throw new BadRequestException('Only delivered orders can be rated');
     }
 
     if (rating < 1 || rating > 5) {
@@ -333,35 +551,19 @@ export class OrderService {
     }
 
     order.customer_rating = rating;
-    order.customer_feedback = feedback;
+    order.customer_feedback = feedback || null;
 
-    // Update rider rating if rider exists
-    if (order.rider) {
-      const rider = await this.riderRepo.findOne({
-        where: { rider_id: order.rider.rider_id },
-      });
-
-      if (rider) {
-        rider.rating = this.calculateNewAverage(rider.rating, rating);
-        await this.riderRepo.save(rider);
-      }
-    }
+    const updatedOrder = await this.orderRepository.save(order);
 
     // Update restaurant rating
-    if (order.restaurant) {
-      const restaurant = await this.restaurantRepo.findOne({
-        where: { restaurant_id: order.restaurant.restaurant_id },
-      });
+    await this.updateRestaurantRating(order.restaurant.restaurant_id);
 
-      if (restaurant) {
-        restaurant.rating = this.calculateNewAverage(restaurant.rating, rating);
-        await this.restaurantRepo.save(restaurant);
-      }
+    // Update rider rating if assigned
+    if (order.rider) {
+      await this.updateRiderRating(order.rider.rider_id);
     }
 
-    const savedOrder = await this.orderRepo.save(order);
-
-    // Broadcast rating submission
+    // Emit WebSocket event
     this.orderGateway.broadcastOrderUpdate({
       orderId,
       type: 'orderRated',
@@ -369,182 +571,577 @@ export class OrderService {
       feedback,
     });
 
-    return savedOrder;
+    return updatedOrder;
   }
 
-  // -----------------------------
-  // CANCEL ORDER
-  // -----------------------------
-  async cancelOrder(orderId: number, reason?: string): Promise<Order> {
+  // ==================== PAYMENT & DELIVERY ====================
+
+  async confirmOrderAfterPayment(orderId: number): Promise<Order> {
     const order = await this.findOne(orderId);
 
-    // Only allow cancellation for pending or accepted orders
-    if (
-      order.status !== OrderStatus.Pending &&
-      order.status !== OrderStatus.Accepted
-    ) {
-      throw new BadRequestException('Order cannot be cancelled at this stage');
-    }
+    order.payment_status = PaymentStatus.Paid;
+    order.status = OrderStatus.Accepted;
 
-    order.status = OrderStatus.Cancelled;
-    if (reason) {
-      order.notes = `Cancelled: ${reason}. ${order.notes || ''}`;
-    }
+    const updatedOrder = await this.orderRepository.save(order);
 
-    const savedOrder = await this.orderRepo.save(order);
+    // Log status change
+    await this.logStatusChange(
+      orderId,
+      OrderStatus.Pending,
+      OrderStatus.Accepted,
+      'Payment confirmed',
+      undefined,
+    );
 
-    // Broadcast cancellation
+    // Emit WebSocket event
     this.orderGateway.broadcastOrderUpdate({
       orderId,
       type: 'statusUpdate',
-      status: OrderStatus.Cancelled,
+      status: OrderStatus.Accepted,
     });
 
-    return savedOrder;
+    return updatedOrder;
   }
 
-  // -----------------------------
-  // GET ORDERS BY CUSTOMER
-  // -----------------------------
-  async findByCustomer(customerId: number): Promise<Order[]> {
-    return this.orderRepo.find({
-      where: { customer: { customer_id: customerId } },
-      relations: ['restaurant', 'rider', 'orderItems'],
-      order: { created_at: 'DESC' },
-    });
+  async confirmDeliveredByCustomer(orderId: number): Promise<Order> {
+    const order = await this.findOne(orderId);
+
+    if (order.status !== OrderStatus.AwaitingConfirmation) {
+      throw new BadRequestException(
+        'Order is not awaiting customer confirmation',
+      );
+    }
+
+    order.customer_confirmed = true;
+
+    // If both customer and rider confirmed, mark as delivered
+    if (order.customer_confirmed && order.rider_confirmed) {
+      order.status = OrderStatus.Delivered;
+
+      // Log status change
+      await this.logStatusChange(
+        orderId,
+        OrderStatus.AwaitingConfirmation,
+        OrderStatus.Delivered,
+        'Delivery confirmed by both parties',
+        undefined,
+      );
+
+      // Emit WebSocket event
+      this.orderGateway.broadcastOrderUpdate({
+        orderId,
+        type: 'orderDelivered',
+      });
+    }
+
+    return this.orderRepository.save(order);
   }
 
-  // -----------------------------
-  // GET ORDERS BY RESTAURANT
-  // -----------------------------
-  async findByRestaurant(restaurantId: number): Promise<Order[]> {
-    return this.orderRepo.find({
-      where: { restaurant: { restaurant_id: restaurantId } },
-      relations: ['customer', 'rider', 'orderItems'],
-      order: { created_at: 'DESC' },
-    });
+  async confirmDeliveredByRider(orderId: number): Promise<Order> {
+    const order = await this.findOne(orderId);
+
+    if (order.status !== OrderStatus.AwaitingConfirmation) {
+      throw new BadRequestException('Order is not awaiting rider confirmation');
+    }
+
+    order.rider_confirmed = true;
+
+    // If both customer and rider confirmed, mark as delivered
+    if (order.customer_confirmed && order.rider_confirmed) {
+      order.status = OrderStatus.Delivered;
+
+      // Log status change
+      await this.logStatusChange(
+        orderId,
+        OrderStatus.AwaitingConfirmation,
+        OrderStatus.Delivered,
+        'Delivery confirmed by both parties',
+        undefined,
+      );
+
+      // Emit WebSocket event
+      this.orderGateway.broadcastOrderUpdate({
+        orderId,
+        type: 'orderDelivered',
+      });
+    }
+
+    return this.orderRepository.save(order);
   }
 
-  // -----------------------------
-  // GET ORDERS BY RIDER
-  // -----------------------------
-  async findByRider(riderId: number): Promise<Order[]> {
-    return this.orderRepo.find({
-      where: { rider: { rider_id: riderId } },
-      relations: ['customer', 'restaurant', 'orderItems'],
-      order: { created_at: 'DESC' },
-    });
-  }
+  // ==================== STATISTICS & REPORTS ====================
 
-  // -----------------------------
-  // GET PENDING ORDERS FOR RESTAURANT
-  // -----------------------------
-  async findPendingForRestaurant(restaurantId: number): Promise<Order[]> {
-    return this.orderRepo.find({
-      where: {
-        restaurant: { restaurant_id: restaurantId },
-        status: OrderStatus.Pending,
-      },
-      relations: ['customer', 'orderItems'],
-      order: { created_at: 'ASC' },
-    });
-  }
-
-  // -----------------------------
-  // GET READY ORDERS FOR RIDERS
-  // -----------------------------
-  async findReadyOrders(): Promise<Order[]> {
-    return this.orderRepo.find({
-      where: {
-        status: OrderStatus.Ready,
-        rider: null, // Not yet assigned
-      },
-      relations: ['restaurant', 'customer', 'orderItems'],
-      order: { created_at: 'ASC' },
-    });
-  }
-
-  // -----------------------------
-  // HELPER METHODS
-  // -----------------------------
-  private calculateNewAverage(
-    currentAverage: number | null,
-    newRating: number,
-  ): number {
-    if (!currentAverage) return newRating;
-
-    // Simple moving average - you can adjust this logic
-    return Number(((currentAverage + newRating) / 2).toFixed(2));
-  }
-
-  /**
-   * Get order statistics for dashboard
-   */
-  async getOrderStats(restaurantId?: number): Promise<{
-    total: number;
-    pending: number;
-    accepted: number;
-    preparing: number;
-    delivered: number;
-    cancelled: number;
-  }> {
-    const query = this.orderRepo.createQueryBuilder('order');
+  async getOrderStats(restaurantId?: number) {
+    const query = this.orderRepository.createQueryBuilder('order');
 
     if (restaurantId) {
       query.where('order.restaurant_id = :restaurantId', { restaurantId });
     }
 
-    const orders = await query.getMany();
+    const total = await query.getCount();
+    const pending = await query
+      .andWhere('order.status = :status', { status: OrderStatus.Pending })
+      .getCount();
+    const preparing = await query
+      .andWhere('order.status = :status', { status: OrderStatus.Preparing })
+      .getCount();
+    const delivered = await query
+      .andWhere('order.status = :status', { status: OrderStatus.Delivered })
+      .getCount();
+    const cancelled = await query
+      .andWhere('order.status = :status', { status: OrderStatus.Cancelled })
+      .getCount();
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const todayOrders = await this.orderRepository.count({
+      where: {
+        created_at: MoreThan(today),
+        ...(restaurantId && { restaurant: { restaurant_id: restaurantId } }),
+      },
+    });
 
     return {
-      total: orders.length,
-      pending: orders.filter((o) => o.status === OrderStatus.Pending).length,
-      accepted: orders.filter((o) => o.status === OrderStatus.Accepted).length,
-      preparing: orders.filter((o) => o.status === OrderStatus.Preparing)
-        .length,
-      delivered: orders.filter((o) => o.status === OrderStatus.Delivered)
-        .length,
-      cancelled: orders.filter((o) => o.status === OrderStatus.Cancelled)
-        .length,
+      total,
+      today: todayOrders,
+      pending,
+      preparing,
+      delivered,
+      cancelled,
+      inProgress: pending + preparing,
     };
   }
 
-  /**
-   * Get revenue statistics
-   */
-  async getRevenueStats(
-    restaurantId?: number,
-    days: number = 30,
-  ): Promise<{
-    totalRevenue: number;
-    averageOrderValue: number;
-    ordersCount: number;
-  }> {
+  async getRevenueStats(restaurantId?: number, days: number = 30) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const query = this.orderRepo
+    const query = this.orderRepository
       .createQueryBuilder('order')
-      .where('order.status = :status', { status: OrderStatus.Delivered })
-      .andWhere('order.created_at >= :startDate', { startDate });
+      .select('DATE(order.created_at)', 'date')
+      .addSelect('SUM(order.total_price)', 'revenue')
+      .addSelect('COUNT(order.order_id)', 'orders')
+      .where('order.created_at >= :startDate', { startDate })
+      .andWhere('order.status = :status', { status: OrderStatus.Delivered })
+      .groupBy('DATE(order.created_at)')
+      .orderBy('date', 'DESC');
 
     if (restaurantId) {
       query.andWhere('order.restaurant_id = :restaurantId', { restaurantId });
     }
 
-    const orders = await query.getMany();
+    const dailyStats = await query.getRawMany();
 
-    const totalRevenue = orders.reduce(
-      (sum, order) => sum + order.total_price,
+    // Calculate totals
+    const totalRevenue = dailyStats.reduce(
+      (sum, day) => sum + parseFloat(day.revenue),
       0,
     );
-    const ordersCount = orders.length;
-    const averageOrderValue = ordersCount > 0 ? totalRevenue / ordersCount : 0;
+    const totalOrders = dailyStats.reduce(
+      (sum, day) => sum + parseInt(day.orders),
+      0,
+    );
 
     return {
-      totalRevenue: Number(totalRevenue.toFixed(2)),
-      averageOrderValue: Number(averageOrderValue.toFixed(2)),
-      ordersCount,
+      dailyStats,
+      totalRevenue,
+      totalOrders,
+      averageOrderValue: totalOrders > 0 ? totalRevenue / totalOrders : 0,
     };
+  }
+
+  async getPaymentStats(restaurantId?: number) {
+    const query = this.orderRepository.createQueryBuilder('order');
+
+    if (restaurantId) {
+      query.where('order.restaurant_id = :restaurantId', { restaurantId });
+    }
+
+    const total = await query.getCount();
+    const paid = await query
+      .andWhere('order.payment_status = :status', {
+        status: PaymentStatus.Paid,
+      })
+      .getCount();
+    const pending = await query
+      .andWhere('order.payment_status = :status', {
+        status: PaymentStatus.Pending,
+      })
+      .getCount();
+    const failed = await query
+      .andWhere('order.payment_status = :status', {
+        status: PaymentStatus.Failed,
+      })
+      .getCount();
+
+    const totalRevenue = await query
+      .select('SUM(order.total_price)', 'revenue')
+      .andWhere('order.payment_status = :status', {
+        status: PaymentStatus.Paid,
+      })
+      .getRawOne();
+
+    return {
+      total,
+      paid,
+      pending,
+      failed,
+      paidPercentage: total > 0 ? (paid / total) * 100 : 0,
+      totalRevenue: totalRevenue?.revenue || 0,
+    };
+  }
+
+  // ==================== HELPER METHODS ====================
+
+  async calculateTotal(orderId: number): Promise<number> {
+    const orderItems = await this.orderItemRepository.find({
+      where: { order: { order_id: orderId } },
+      relations: ['menu_item'],
+    });
+
+    const total = orderItems.reduce(
+      (sum, item) => sum + item.price_at_purchase * item.quantity,
+      0,
+    );
+
+    await this.orderRepository.update(orderId, { total_price: total });
+    return total;
+  }
+
+  private async logStatusChange(
+    orderId: number,
+    fromStatus: OrderStatus | null,
+    toStatus: OrderStatus,
+    notes?: string,
+    userId?: number,
+  ): Promise<void> {
+    try {
+      const logData: any = {
+        order: { order_id: orderId },
+        from_status: fromStatus,
+        to_status: toStatus,
+        notes,
+      };
+
+      if (userId) {
+        logData.changed_by = { user_id: userId };
+        logData.changed_by_role = await this.getUserRole(userId);
+      } else {
+        logData.changed_by_role = 'system';
+      }
+
+      const log = this.statusLogRepository.create(logData);
+      await this.statusLogRepository.save(log);
+    } catch (error) {
+      this.logger.error(
+        `Failed to log status change for order ${orderId}:`,
+        error,
+      );
+    }
+  }
+
+  private async getUserRole(userId: number): Promise<string> {
+    try {
+      const user = await this.userRepository.findOne({
+        where: { user_id: userId },
+        select: ['role'],
+      });
+      return user?.role || 'unknown';
+    } catch (error) {
+      this.logger.error(`Failed to get user role for user ${userId}:`, error);
+      return 'unknown';
+    }
+  }
+
+  private async updateRestaurantRating(restaurantId: number): Promise<void> {
+    interface RatingResult {
+      average: string | null;
+      count: string;
+    }
+
+    const result = await this.orderRepository
+      .createQueryBuilder('order')
+      .select('AVG(order.customer_rating)', 'average')
+      .addSelect('COUNT(order.order_id)', 'count')
+      .where('order.restaurant_id = :restaurantId', { restaurantId })
+      .andWhere('order.customer_rating IS NOT NULL')
+      .getRawOne<RatingResult>();
+
+    if (result && parseInt(result.count) > 0) {
+      const averageRating = parseFloat(result.average || '0');
+      await this.restaurantRepository.update(restaurantId, {
+        rating: averageRating,
+      });
+    }
+  }
+
+  private async updateRiderRating(riderId: number): Promise<void> {
+    interface RatingResult {
+      average: string | null;
+      count: string;
+    }
+
+    const result = await this.orderRepository
+      .createQueryBuilder('order')
+      .select('AVG(order.customer_rating)', 'average')
+      .addSelect('COUNT(order.order_id)', 'count')
+      .where('order.rider_id = :riderId', { riderId })
+      .andWhere('order.customer_rating IS NOT NULL')
+      .getRawOne<RatingResult>();
+
+    if (result && parseInt(result.count) > 0) {
+      const averageRating = parseFloat(result.average || '0');
+      await this.riderRepository.update(riderId, { rating: averageRating });
+    }
+  }
+
+  private async initiateRefund(orderId: number, amount: number): Promise<void> {
+    try {
+      // Integrate with payment gateway
+      this.logger.log(`Initiating refund for order ${orderId}: ${amount}`);
+
+      // Update payment status
+      await this.orderRepository.update(orderId, {
+        payment_status: PaymentStatus.Refunded,
+      });
+
+      // Log refund
+      await this.logStatusChange(
+        orderId,
+        OrderStatus.Cancelled,
+        OrderStatus.Cancelled,
+        `Refund initiated: ${amount}`,
+        undefined,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to initiate refund for order ${orderId}:`,
+        error,
+      );
+      throw new InternalServerErrorException('Failed to process refund');
+    }
+  }
+
+  // ==================== VALIDATION METHODS ====================
+
+  private canOrderBeCancelled(order: Order): boolean {
+    const nonCancellableStatuses = [
+      OrderStatus.Delivered,
+      OrderStatus.Cancelled,
+      OrderStatus.OnRoute,
+    ];
+    return !nonCancellableStatuses.includes(order.status);
+  }
+
+  private canOrderBeUpdated(order: Order): boolean {
+    const nonUpdatableStatuses = [
+      OrderStatus.Delivered,
+      OrderStatus.Cancelled,
+      OrderStatus.OnRoute,
+    ];
+    return !nonUpdatableStatuses.includes(order.status);
+  }
+
+  private canConfirmDelivery(order: Order): boolean {
+    return order.status === OrderStatus.AwaitingConfirmation;
+  }
+
+  private isAssignmentExpired(order: Order): boolean {
+    if (!order.assigned_at) return false;
+
+    const assignmentTimeout = 30 * 60 * 1000; // 30 minutes in milliseconds
+    const timeSinceAssignment =
+      Date.now() - new Date(order.assigned_at).getTime();
+
+    return timeSinceAssignment > assignmentTimeout;
+  }
+
+  private isValidStatusTransition(from: OrderStatus, to: OrderStatus): boolean {
+    const validTransitions: Record<OrderStatus, OrderStatus[]> = {
+      [OrderStatus.Pending]: [OrderStatus.Accepted, OrderStatus.Cancelled],
+      [OrderStatus.Accepted]: [OrderStatus.Preparing, OrderStatus.Cancelled],
+      [OrderStatus.Preparing]: [OrderStatus.Ready, OrderStatus.Cancelled],
+      [OrderStatus.Ready]: [OrderStatus.OnRoute, OrderStatus.Cancelled],
+      [OrderStatus.OnRoute]: [OrderStatus.AwaitingConfirmation],
+      [OrderStatus.AwaitingConfirmation]: [OrderStatus.Delivered],
+      [OrderStatus.Delivered]: [],
+      [OrderStatus.Cancelled]: [],
+    };
+
+    return validTransitions[from]?.includes(to) || false;
+  }
+
+  private calculateEstimatedDeliveryTime(order: Order): Date | null {
+    if (!order.created_at) return null;
+
+    const baseTime = new Date(order.created_at);
+
+    // Add estimated times based on status
+    switch (order.status) {
+      case OrderStatus.Pending:
+        baseTime.setMinutes(baseTime.getMinutes() + 5); // 5 minutes for acceptance
+        break;
+      case OrderStatus.Accepted:
+        baseTime.setMinutes(baseTime.getMinutes() + 20); // 20 minutes for preparation
+        break;
+      case OrderStatus.Preparing:
+        baseTime.setMinutes(baseTime.getMinutes() + 15); // 15 minutes remaining
+        break;
+      case OrderStatus.Ready:
+        baseTime.setMinutes(baseTime.getMinutes() + 30); // 30 minutes for delivery
+        break;
+      case OrderStatus.OnRoute:
+        baseTime.setMinutes(baseTime.getMinutes() + 15); // 15 minutes remaining
+        break;
+      default:
+        return null;
+    }
+
+    return baseTime;
+  }
+
+  // ==================== BULK OPERATIONS ====================
+
+  async bulkUpdateStatus(
+    orderIds: number[],
+    status: OrderStatus,
+  ): Promise<Order[]> {
+    const orders = await this.orderRepository.find({
+      where: { order_id: In(orderIds) },
+    });
+
+    const updatedOrders: Order[] = [];
+
+    for (const order of orders) {
+      try {
+        const updatedOrder = await this.updateStatus(order.order_id, status);
+        updatedOrders.push(updatedOrder);
+      } catch (error) {
+        this.logger.error(`Failed to update order ${order.order_id}:`, error);
+      }
+    }
+
+    return updatedOrders;
+  }
+
+  async bulkAssignRider(orderIds: number[], riderId: number): Promise<Order[]> {
+    const rider = await this.riderRepository.findOne({
+      where: { rider_id: riderId },
+    });
+
+    if (!rider) {
+      throw new NotFoundException(`Rider with ID ${riderId} not found`);
+    }
+
+    if (!rider.is_online) {
+      throw new BadRequestException('Rider is not online');
+    }
+
+    const orders = await this.orderRepository.find({
+      where: {
+        order_id: In(orderIds),
+        status: OrderStatus.Ready,
+        rider: IsNull(),
+      },
+    });
+
+    const updatedOrders: Order[] = [];
+
+    for (const order of orders) {
+      try {
+        const updatedOrder = await this.assignRider(order.order_id, riderId);
+        updatedOrders.push(updatedOrder);
+      } catch (error) {
+        this.logger.error(
+          `Failed to assign rider to order ${order.order_id}:`,
+          error,
+        );
+      }
+    }
+
+    return updatedOrders;
+  }
+
+  // ==================== SEARCH ====================
+
+  async searchOrders(query: string, filters?: any): Promise<Order[]> {
+    const searchQuery = this.orderRepository
+      .createQueryBuilder('order')
+      .leftJoinAndSelect('order.customer', 'customer')
+      .leftJoinAndSelect('customer.user', 'user')
+      .leftJoinAndSelect('order.restaurant', 'restaurant')
+      .leftJoinAndSelect('order.rider', 'rider')
+      .where('order.order_id = :id', { id: parseInt(query) || 0 })
+      .orWhere('user.name LIKE :name', { name: `%${query}%` })
+      .orWhere('user.email LIKE :email', { email: `%${query}%` })
+      .orWhere('user.phone LIKE :phone', { phone: `%${query}%` })
+      .orWhere('restaurant.name LIKE :restaurant', { restaurant: `%${query}%` })
+      .orderBy('order.created_at', 'DESC')
+      .take(50);
+
+    if (filters?.status) {
+      searchQuery.andWhere('order.status = :status', {
+        status: filters.status,
+      });
+    }
+
+    if (filters?.fromDate) {
+      searchQuery.andWhere('order.created_at >= :fromDate', {
+        fromDate: filters.fromDate,
+      });
+    }
+
+    if (filters?.toDate) {
+      searchQuery.andWhere('order.created_at <= :toDate', {
+        toDate: filters.toDate,
+      });
+    }
+
+    return searchQuery.getMany();
+  }
+
+  //  EXPORT
+
+  async exportOrders(filters: OrderQueryDto): Promise<any> {
+    const orders = await this.findWithFilters(filters);
+
+    // Format data for export
+    const exportData = orders.orders.map((order) => ({
+      'Order ID': order.order_id,
+      Customer: order.customer.user?.name || 'N/A',
+      Restaurant: order.restaurant.name,
+      Status: order.status,
+      Total: order.total_price,
+      'Payment Status': order.payment_status,
+      'Delivery Address': order.delivery_address,
+      'Created At': order.created_at,
+      'Updated At': order.updated_at,
+    }));
+
+    return {
+      data: exportData,
+      metadata: {
+        total: orders.total,
+        generatedAt: new Date(),
+        filters,
+      },
+    };
+  }
+
+  // CLEANUP 
+
+  async cleanupOldOrders(days: number = 90): Promise<number> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+
+    const result = await this.orderRepository
+      .createQueryBuilder()
+      .softDelete()
+      .where('status = :status', { status: OrderStatus.Delivered })
+      .andWhere('created_at < :cutoff', { cutoff: cutoffDate })
+      .execute();
+
+    return result.affected || 0;
   }
 }

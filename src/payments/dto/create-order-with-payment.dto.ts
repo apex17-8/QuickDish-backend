@@ -1,48 +1,41 @@
+// orders/dto/create-order-with-payment.dto.ts
 import {
-  IsInt,
-  IsNotEmpty,
+  IsNumber,
   IsString,
+  IsEmail,
   IsOptional,
+  IsUrl,
   IsArray,
   ValidateNested,
-  IsNumber,
-  Min,
-  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateOrderItemDto } from '../../order_items/dto/create-order_item.dto';
 
-export class CreateOrderDto {
-  @IsInt()
-  @IsNotEmpty()
+export class CreateOrderWithPaymentDto {
+  @IsNumber()
   customer_id: number;
 
-  @IsInt()
-  @IsNotEmpty()
+  @IsNumber()
   restaurant_id: number;
 
   @IsString()
-  @IsNotEmpty()
   delivery_address: string;
 
   @IsOptional()
   @IsString()
   notes?: string;
 
+  @IsEmail()
+  email: string;
+
+  @IsNumber()
+  amount: number;
+
+  @IsUrl()
+  callback_url: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateOrderItemDto)
   items: CreateOrderItemDto[];
-
-  @IsOptional()
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  delivery_latitude?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  delivery_longitude?: number;
 }

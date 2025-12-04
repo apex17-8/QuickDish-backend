@@ -36,7 +36,9 @@ export class OrderItemsController {
   }
 
   @Get('order/:orderId')
-  findByOrder(@Param('orderId', ParseIntPipe) orderId: number): Promise<OrderItem[]> {
+  findByOrder(
+    @Param('orderId', ParseIntPipe) orderId: number,
+  ): Promise<OrderItem[]> {
     return this.orderItemsService.findByOrder(orderId);
   }
 

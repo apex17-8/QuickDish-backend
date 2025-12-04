@@ -6,10 +6,7 @@ import { RiderLocationService } from './rider_locations.service';
 import { RiderLocationController } from './rider_locations.controller';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([RiderLocation, Rider]),
-    // No RedisModule here - it's already in AppModule
-  ],
+  imports: [TypeOrmModule.forFeature([RiderLocation, Rider])],
   providers: [RiderLocationService],
   controllers: [RiderLocationController],
   exports: [RiderLocationService],

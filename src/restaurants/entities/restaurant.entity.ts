@@ -11,8 +11,8 @@ import {
 import { User } from '../../users/entities/user.entity';
 import { RestaurantStaff } from '../../restaurant_staff/entities/restaurant_staff.entity';
 import { Order } from '../../orders/entities/order.entity';
-import { MenuItem } from 'src/menu_items/entities/menu_item.entity';
-import { RestaurantMenuCategory } from 'src/restaurant-menu_categories/entities/restaurant-menu_category.entity';
+import { MenuItem } from '../../menu_items/entities/menu_item.entity';
+import { RestaurantMenuCategory } from '../../restaurant-menu_categories/entities/restaurant-menu_category.entity';
 
 @Entity('restaurants')
 export class Restaurant {

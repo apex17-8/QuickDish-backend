@@ -32,7 +32,7 @@ export class OrderStatusLog {
   changed_by: User;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  changed_by_role: string; // 'system', 'rider', 'restaurant', 'customer_care'
+  changed_by_role: string;
 
   @Column({ type: 'text', nullable: true })
   notes: string;

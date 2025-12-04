@@ -5,7 +5,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { Restaurant } from 'src/restaurants/entities/restaurant.entity';
+import { Restaurant } from '../../restaurants/entities/restaurant.entity';
 import { RestaurantMenuCategory } from '../../restaurant-menu_categories/entities/restaurant-menu_category.entity';
 
 @Entity('menu_items')
@@ -27,11 +27,7 @@ export class MenuItem {
 
   @Column({ type: 'nvarchar', length: 255, nullable: true })
   image_url: string;
-
-  // -------------------------
   // RELATIONSHIPS
-  // -------------------------
-
   @ManyToOne(() => Restaurant, (restaurant) => restaurant.menuItems, {
     onDelete: 'CASCADE',
   })
@@ -41,12 +37,14 @@ export class MenuItem {
   @Column()
   restaurant_id: number;
 
+  // Category relationship (NO cascade to avoid multiple cascade paths)
   @ManyToOne(() => RestaurantMenuCategory, (category) => category.menuItems, {
     nullable: false,
-    onDelete: 'CASCADE',
+    onDelete: 'NO ACTION',
   })
+  @JoinColumn({ name: 'category_id' })
   category: RestaurantMenuCategory;
 
-  @Column({ nullable: true })
+  @Column()
   category_id: number;
 }

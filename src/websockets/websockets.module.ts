@@ -9,10 +9,7 @@ import { User } from '../users/entities/user.entity';
 import { MessagesModule } from '../messages/messages.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Order, Rider, User]),
-    MessagesModule, // Add this to use MessagesService
-  ],
+  imports: [TypeOrmModule.forFeature([Order, Rider, User]), MessagesModule],
   providers: [OrderTrackingGateway, ChatGateway, OrderTrackingService],
 })
 export class WebsocketsModule {}

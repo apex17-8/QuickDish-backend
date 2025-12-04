@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, IsPositive, IsString, IsOptional } from 'class-validator';
+import { IsInt, IsPositive, IsOptional, IsString } from 'class-validator';
 
 export class CreateOrderItemDto {
   @IsInt()

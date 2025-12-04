@@ -1,0 +1,78 @@
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class InitialMigration1764750227142 implements MigrationInterface {
+    name = 'InitialMigration1764750227142'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`CREATE TABLE "restaurant_staff" ("restaurant_stuff_id" int NOT NULL IDENTITY(1,1), "role" varchar(50) NOT NULL, "assigned_at" datetime2 NOT NULL CONSTRAINT "DF_fb956bb16ebf5692ca6b7e11d19" DEFAULT getdate(), "updated_at" datetime2 NOT NULL CONSTRAINT "DF_52534bffe7f48f74c13ba7414c7" DEFAULT getdate(), "user_id" int NOT NULL, "restaurant_id" int NOT NULL, "created_by" int, CONSTRAINT "PK_9682fc3e40ba0e29c959c338638" PRIMARY KEY ("restaurant_stuff_id"))`);
+        await queryRunner.query(`CREATE TABLE "customers" ("customer_id" int NOT NULL IDENTITY(1,1), "loyalty_points" int NOT NULL CONSTRAINT "DF_4d140d499a10eb73f65fb0334a8" DEFAULT 0, "default_address" varchar(255), "preferences" ntext, "created_at" datetime2 NOT NULL CONSTRAINT "DF_a8fcf679692db1c886e7f15d2ba" DEFAULT getdate(), "updated_at" datetime2 NOT NULL CONSTRAINT "DF_386a5e03676dab6b7bf4bf020bd" DEFAULT getdate(), "user_id" int NOT NULL, CONSTRAINT "PK_6c444ce6637f2c1d71c3cf136c1" PRIMARY KEY ("customer_id"))`);
+        await queryRunner.query(`CREATE TABLE "rider_locations" ("id" int NOT NULL IDENTITY(1,1), "latitude" float NOT NULL, "longitude" float NOT NULL, "address" varchar(255), "timestamp" datetime2 NOT NULL CONSTRAINT "DF_5f948ef75c13d3b9e466746022e" DEFAULT getdate(), "rider_id" int NOT NULL, CONSTRAINT "PK_9ade5953d7444f3d092adfe0267" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "riders" ("rider_id" int NOT NULL IDENTITY(1,1), "vehicle_type" varchar(50) NOT NULL, "is_online" bit NOT NULL CONSTRAINT "DF_f91a4ead7106b69017450926340" DEFAULT 0, "rating" float, "last_location" varchar(255), "currentLatitude" float, "currentLongitude" float, "created_at" datetime2 NOT NULL CONSTRAINT "DF_51a09914171f162991674939ebe" DEFAULT getdate(), "updated_at" datetime2 NOT NULL CONSTRAINT "DF_47f6313e3267074efbc3e180dd5" DEFAULT getdate(), "user_id" int NOT NULL, CONSTRAINT "PK_511cb20ef92f9568011b7e359f1" PRIMARY KEY ("rider_id"))`);
+        await queryRunner.query(`CREATE TABLE "messages" ("message_id" int NOT NULL IDENTITY(1,1), "sender_type" varchar(20) NOT NULL CONSTRAINT "DF_292f9d36b4f46a4b3146de63422" DEFAULT 'customer', "content" text NOT NULL, "is_read" bit NOT NULL CONSTRAINT "DF_93eb201c7a9603e415301e69a07" DEFAULT 0, "sent_at" datetime2 NOT NULL CONSTRAINT "DF_c2bc726fd86d8f91c4868a1056b" DEFAULT getdate(), "deleted_at" datetime2, "order_id" int NOT NULL, "sender_id" int NOT NULL, CONSTRAINT "PK_6187089f850b8deeca0232cfeba" PRIMARY KEY ("message_id"))`);
+        await queryRunner.query(`CREATE TABLE "restaurant_menu_categories" ("category_id" int NOT NULL IDENTITY(1,1), "name" nvarchar(255) NOT NULL, "description" nvarchar(255), "isActive" bit NOT NULL CONSTRAINT "DF_4e8b0f38ca4598471372197b6e4" DEFAULT 1, "restaurantRestaurantId" int, CONSTRAINT "PK_3069a3cf4fbb43216a31fda2c63" PRIMARY KEY ("category_id"))`);
+        await queryRunner.query(`CREATE TABLE "menu_items" ("menu_item_id" int NOT NULL IDENTITY(1,1), "name" nvarchar(255) NOT NULL, "description" nvarchar(1000), "price" decimal(10,2) NOT NULL, "is_available" int NOT NULL CONSTRAINT "DF_d6c170a25492610a34a2b59e5c5" DEFAULT 1, "image_url" nvarchar(255), "restaurant_id" int NOT NULL, "category_id" int NOT NULL, CONSTRAINT "PK_a2db37ed8911bbdd4be781d4b0b" PRIMARY KEY ("menu_item_id"))`);
+        await queryRunner.query(`CREATE TABLE "order_items" ("order_item_id" int NOT NULL IDENTITY(1,1), "quantity" int NOT NULL CONSTRAINT "DF_dfa278b71e19946f8847a454d17" DEFAULT 1, "price_at_purchase" decimal(10,2) NOT NULL, "special_instructions" text, "order_id" int NOT NULL, "menu_item_id" int NOT NULL, CONSTRAINT "PK_54c952fdc94b9b487ef968b4047" PRIMARY KEY ("order_item_id"))`);
+        await queryRunner.query(`CREATE TABLE "order_status_logs" ("id" int NOT NULL IDENTITY(1,1), "from_status" varchar(50) NOT NULL, "to_status" varchar(50) NOT NULL, "changed_by_role" varchar(50), "notes" text, "changed_at" datetime2 NOT NULL CONSTRAINT "DF_b43b1ff9fcd672f1c288f201a20" DEFAULT getdate(), "order_id" int NOT NULL, "changed_by_user_id" int, CONSTRAINT "PK_8e29911f9edfb67c6810f56ac5a" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE TABLE "payments" ("payment_id" int NOT NULL IDENTITY(1,1), "user_id" int NOT NULL, "order_id" int NOT NULL, "payment_number" nvarchar(100) NOT NULL, "email" nvarchar(255) NOT NULL, "amount" decimal(10,2) NOT NULL, "currency" nvarchar(10) NOT NULL CONSTRAINT "DF_eb4f745ec0ac3b18b42eff773fa" DEFAULT 'KES', "payment_method" nvarchar(20) NOT NULL CONSTRAINT "DF_3f65f62084af2ebfbe39f8955b1" DEFAULT 'CARD', "gateway" nvarchar(20) NOT NULL CONSTRAINT "DF_094fd3232fe017b7d6ec81c4b5a" DEFAULT 'PAYSTACK', "status" nvarchar(20) NOT NULL CONSTRAINT "DF_32b41cdb985a296213e9a928b50" DEFAULT 'PENDING', "transaction_id" nvarchar(255), "payment_reference" nvarchar(255), "authorization_url" nvarchar(500), "gateway_response" nvarchar(255), "failure_reason" nvarchar(255), "failed_at" datetime, "paid_at" datetime, "refund_reason" nvarchar(255), "refunded_at" datetime, "created_at" datetime NOT NULL CONSTRAINT "DF_1237daf748b7653a6ebb9492fe4" DEFAULT getdate(), "updated_at" datetime NOT NULL CONSTRAINT "DF_017ad402d7ab72597d9aa6e8239" DEFAULT getdate(), CONSTRAINT "UQ_37f40df34aab6084881c0ceebdc" UNIQUE ("payment_number"), CONSTRAINT "PK_8866a3cfff96b8e17c2b204aae0" PRIMARY KEY ("payment_id"))`);
+        await queryRunner.query(`CREATE TABLE "orders" ("order_id" int NOT NULL IDENTITY(1,1), "total_price" decimal(10,2) NOT NULL CONSTRAINT "DF_98d5422159907cf492a1c172829" DEFAULT 0, "status" varchar(30) NOT NULL CONSTRAINT "DF_775c9f06fc27ae3ff8fb26f2c47" DEFAULT 'pending', "delivery_address" text, "notes" text, "amount_paid" decimal(10,2) NOT NULL CONSTRAINT "DF_3812389daf6fac713f270a6130b" DEFAULT 0, "payment_status" varchar(20) NOT NULL CONSTRAINT "DF_892cef7cd3962597f0a1c006795" DEFAULT 'pending', "payment_reference" varchar(255), "customer_confirmed" bit NOT NULL CONSTRAINT "DF_ad560d70edb9cc6cace585f1fae" DEFAULT 0, "rider_confirmed" bit NOT NULL CONSTRAINT "DF_f9a3577555018d21c882452a2e1" DEFAULT 0, "assigned_at" datetime2, "accepted_at" datetime2, "picked_up_at" datetime2, "assignment_attempts" int NOT NULL CONSTRAINT "DF_dca0f9e3bafe7faf2efc93dd42e" DEFAULT 0, "requires_manual_assignment" bit NOT NULL CONSTRAINT "DF_7d756098ac21141eadcfb164c14" DEFAULT 0, "customer_rating" int, "customer_feedback" nvarchar(500), "delivery_latitude" float, "delivery_longitude" float, "created_at" datetime2 NOT NULL CONSTRAINT "DF_c884e321f927d5b86aac7c8f9ef" DEFAULT getdate(), "updated_at" datetime2 NOT NULL CONSTRAINT "DF_44eaa1eacc7a091d5d3e2a6c828" DEFAULT getdate(), "deleted_at" datetime2, "customer_id" int NOT NULL, "restaurant_id" int NOT NULL, "rider_id" int, CONSTRAINT "PK_cad55b3cb25b38be94d2ce831db" PRIMARY KEY ("order_id"))`);
+        await queryRunner.query(`CREATE TABLE "restaurants" ("restaurant_id" int NOT NULL IDENTITY(1,1), "name" varchar(255) NOT NULL, "address" varchar(255) NOT NULL, "phone" varchar(20) NOT NULL, "logo_url" varchar(255), "rating" float, "created_at" datetime2 NOT NULL CONSTRAINT "DF_f9154ff0ac83ad0918625e00351" DEFAULT getdate(), "updated_at" datetime2 NOT NULL CONSTRAINT "DF_16161a8ab9ac5e10f7fe3c3bd9f" DEFAULT getdate(), "owner_id" int NOT NULL, CONSTRAINT "PK_1b4e7ea0e70a11469cf3251ac7e" PRIMARY KEY ("restaurant_id"))`);
+        await queryRunner.query(`CREATE TABLE "users" ("user_id" int NOT NULL IDENTITY(1,1), "name" varchar(255) NOT NULL, "email" varchar(255) NOT NULL, "password" varchar(255) NOT NULL, "phone" varchar(20) NOT NULL, "hashedRefreshedToken" varchar(255), "role" varchar(50) NOT NULL CONSTRAINT "DF_ace513fa30d485cfd25c11a9e4a" DEFAULT 'customer', "created_at" datetime2 NOT NULL CONSTRAINT "DF_c9b5b525a96ddc2c5647d7f7fa5" DEFAULT getdate(), "updated_at" datetime2 NOT NULL CONSTRAINT "DF_6d596d799f9cb9dac6f7bf7c23c" DEFAULT getdate(), CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email"), CONSTRAINT "PK_96aac72f1574b88752e9fb00089" PRIMARY KEY ("user_id"))`);
+        await queryRunner.query(`ALTER TABLE "restaurant_staff" ADD CONSTRAINT "FK_973c53bdc06495c9daf779e23f3" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "restaurant_staff" ADD CONSTRAINT "FK_14050e881d650b217075f1110c4" FOREIGN KEY ("restaurant_id") REFERENCES "restaurants"("restaurant_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "restaurant_staff" ADD CONSTRAINT "FK_f78602f51d940aa5e852a5bf821" FOREIGN KEY ("created_by") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "customers" ADD CONSTRAINT "FK_11d81cd7be87b6f8865b0cf7661" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "rider_locations" ADD CONSTRAINT "FK_52368e8acd5ba4af0f327cef7cd" FOREIGN KEY ("rider_id") REFERENCES "riders"("rider_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "riders" ADD CONSTRAINT "FK_8d3d41e9ec12eff82b325fa8c07" FOREIGN KEY ("user_id") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "messages" ADD CONSTRAINT "FK_bb3c15e546faf62faaa4f1d06d3" FOREIGN KEY ("order_id") REFERENCES "orders"("order_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "messages" ADD CONSTRAINT "FK_22133395bd13b970ccd0c34ab22" FOREIGN KEY ("sender_id") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "restaurant_menu_categories" ADD CONSTRAINT "FK_7ebdccd5ac5c88cfa66f506626b" FOREIGN KEY ("restaurantRestaurantId") REFERENCES "restaurants"("restaurant_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "menu_items" ADD CONSTRAINT "FK_8d1ee4780bf64ae94cbf3e53705" FOREIGN KEY ("restaurant_id") REFERENCES "restaurants"("restaurant_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "menu_items" ADD CONSTRAINT "FK_20cff56c44dd4fe52d5aa2b96f8" FOREIGN KEY ("category_id") REFERENCES "restaurant_menu_categories"("category_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "order_items" ADD CONSTRAINT "FK_145532db85752b29c57d2b7b1f1" FOREIGN KEY ("order_id") REFERENCES "orders"("order_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "order_items" ADD CONSTRAINT "FK_e462517174f561ece2916701c0a" FOREIGN KEY ("menu_item_id") REFERENCES "menu_items"("menu_item_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "order_status_logs" ADD CONSTRAINT "FK_994abe9a55f6bbb2b8cef54761d" FOREIGN KEY ("order_id") REFERENCES "orders"("order_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "order_status_logs" ADD CONSTRAINT "FK_134aabb05221b4fcf36e3a019db" FOREIGN KEY ("changed_by_user_id") REFERENCES "users"("user_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "payments" ADD CONSTRAINT "FK_b2f7b823a21562eeca20e72b006" FOREIGN KEY ("order_id") REFERENCES "orders"("order_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "orders" ADD CONSTRAINT "FK_772d0ce0473ac2ccfa26060dbe9" FOREIGN KEY ("customer_id") REFERENCES "customers"("customer_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "orders" ADD CONSTRAINT "FK_85fdda5fcce2f397ef8f117a2c6" FOREIGN KEY ("restaurant_id") REFERENCES "restaurants"("restaurant_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "orders" ADD CONSTRAINT "FK_a261413fe1e85c38c6c5cb9bede" FOREIGN KEY ("rider_id") REFERENCES "riders"("rider_id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "restaurants" ADD CONSTRAINT "FK_efe4eead3adf44a4649a3353efc" FOREIGN KEY ("owner_id") REFERENCES "users"("user_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "restaurants" DROP CONSTRAINT "FK_efe4eead3adf44a4649a3353efc"`);
+        await queryRunner.query(`ALTER TABLE "orders" DROP CONSTRAINT "FK_a261413fe1e85c38c6c5cb9bede"`);
+        await queryRunner.query(`ALTER TABLE "orders" DROP CONSTRAINT "FK_85fdda5fcce2f397ef8f117a2c6"`);
+        await queryRunner.query(`ALTER TABLE "orders" DROP CONSTRAINT "FK_772d0ce0473ac2ccfa26060dbe9"`);
+        await queryRunner.query(`ALTER TABLE "payments" DROP CONSTRAINT "FK_b2f7b823a21562eeca20e72b006"`);
+        await queryRunner.query(`ALTER TABLE "order_status_logs" DROP CONSTRAINT "FK_134aabb05221b4fcf36e3a019db"`);
+        await queryRunner.query(`ALTER TABLE "order_status_logs" DROP CONSTRAINT "FK_994abe9a55f6bbb2b8cef54761d"`);
+        await queryRunner.query(`ALTER TABLE "order_items" DROP CONSTRAINT "FK_e462517174f561ece2916701c0a"`);
+        await queryRunner.query(`ALTER TABLE "order_items" DROP CONSTRAINT "FK_145532db85752b29c57d2b7b1f1"`);
+        await queryRunner.query(`ALTER TABLE "menu_items" DROP CONSTRAINT "FK_20cff56c44dd4fe52d5aa2b96f8"`);
+        await queryRunner.query(`ALTER TABLE "menu_items" DROP CONSTRAINT "FK_8d1ee4780bf64ae94cbf3e53705"`);
+        await queryRunner.query(`ALTER TABLE "restaurant_menu_categories" DROP CONSTRAINT "FK_7ebdccd5ac5c88cfa66f506626b"`);
+        await queryRunner.query(`ALTER TABLE "messages" DROP CONSTRAINT "FK_22133395bd13b970ccd0c34ab22"`);
+        await queryRunner.query(`ALTER TABLE "messages" DROP CONSTRAINT "FK_bb3c15e546faf62faaa4f1d06d3"`);
+        await queryRunner.query(`ALTER TABLE "riders" DROP CONSTRAINT "FK_8d3d41e9ec12eff82b325fa8c07"`);
+        await queryRunner.query(`ALTER TABLE "rider_locations" DROP CONSTRAINT "FK_52368e8acd5ba4af0f327cef7cd"`);
+        await queryRunner.query(`ALTER TABLE "customers" DROP CONSTRAINT "FK_11d81cd7be87b6f8865b0cf7661"`);
+        await queryRunner.query(`ALTER TABLE "restaurant_staff" DROP CONSTRAINT "FK_f78602f51d940aa5e852a5bf821"`);
+        await queryRunner.query(`ALTER TABLE "restaurant_staff" DROP CONSTRAINT "FK_14050e881d650b217075f1110c4"`);
+        await queryRunner.query(`ALTER TABLE "restaurant_staff" DROP CONSTRAINT "FK_973c53bdc06495c9daf779e23f3"`);
+        await queryRunner.query(`DROP TABLE "users"`);
+        await queryRunner.query(`DROP TABLE "restaurants"`);
+        await queryRunner.query(`DROP TABLE "orders"`);
+        await queryRunner.query(`DROP TABLE "payments"`);
+        await queryRunner.query(`DROP TABLE "order_status_logs"`);
+        await queryRunner.query(`DROP TABLE "order_items"`);
+        await queryRunner.query(`DROP TABLE "menu_items"`);
+        await queryRunner.query(`DROP TABLE "restaurant_menu_categories"`);
+        await queryRunner.query(`DROP TABLE "messages"`);
+        await queryRunner.query(`DROP TABLE "riders"`);
+        await queryRunner.query(`DROP TABLE "rider_locations"`);
+        await queryRunner.query(`DROP TABLE "customers"`);
+        await queryRunner.query(`DROP TABLE "restaurant_staff"`);
+    }
+
+}

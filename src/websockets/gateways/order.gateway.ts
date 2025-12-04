@@ -10,14 +10,14 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Injectable } from '@nestjs/common';
-
+import { PaymentStatus } from 'src/orders/entities/order.entity';
 export type OrderEventPayload =
   | { orderId: number; type: 'riderAssigned'; riderId: number }
   | { orderId: number; type: 'statusUpdate'; status: string }
   | { orderId: number; type: 'orderRated'; rating: number; feedback?: string }
   | { orderId: number; type: 'orderDelivered' }
-  | { orderId: number; type: 'chatCleared' };
-
+  | { orderId: number; type: 'chatCleared' }
+  | { orderId: number; type: 'paymentUpdate'; paymentStatus: PaymentStatus };
 @WebSocketGateway({
   cors: { origin: '*' },
   namespace: '/orders',

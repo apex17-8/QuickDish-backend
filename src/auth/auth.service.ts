@@ -141,7 +141,10 @@ export class AuthService {
     if (!user || !user.hashedRefreshedToken)
       throw new UnauthorizedException('Access Denied');
 
-    const isValid = await bcrypt.compare(refreshToken, user.hashedRefreshedToken);
+    const isValid = await bcrypt.compare(
+      refreshToken,
+      user.hashedRefreshedToken,
+    );
     if (!isValid) throw new UnauthorizedException('Invalid refresh token');
 
     const { accessToken, refreshToken: newRefreshToken } = this.generateTokens(
