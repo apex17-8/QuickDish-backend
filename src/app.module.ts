@@ -18,12 +18,14 @@ import { RestaurantMenuCategoriesModule } from './restaurant-menu_categories/res
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { WebsocketsModule } from './websockets/websockets.module';
+import {databaseConfig} from './database/database.config'
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.local', '.env'],
+      envFilePath: '.env',
+      load: [databaseConfig]
     }),
     EventEmitterModule.forRoot(),
     DatabaseModule,
