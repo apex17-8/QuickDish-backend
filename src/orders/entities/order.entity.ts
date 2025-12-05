@@ -1,4 +1,3 @@
-// src/orders/entities/order.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -10,6 +9,7 @@ import {
   OneToMany,
   DeleteDateColumn,
 } from 'typeorm';
+import { Transform } from 'class-transformer';
 import { Customer } from '../../customers/entities/customer.entity';
 import { Restaurant } from '../../restaurants/entities/restaurant.entity';
 import { Rider } from '../../riders/entities/rider.entity';
@@ -45,6 +45,7 @@ export class Order {
   // BASE ORDER FIELDS
   // -----------------------------
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Transform(({ value }) => parseFloat(value) || 0)
   total_price: number;
 
   @Column({ type: 'varchar', length: 30, default: OrderStatus.Pending })
@@ -60,6 +61,7 @@ export class Order {
   // PAYMENT FIELDS
   // -----------------------------
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Transform(({ value }) => parseFloat(value) || 0)
   amount_paid: number;
 
   // Store enum as string for MSSQL compatibility
@@ -73,10 +75,14 @@ export class Order {
   // DELIVERY CONFIRMATION
   // -----------------------------
   @Column({ type: 'bit', default: 0 })
-  customer_confirmed: boolean;
+  @Transform(({ value }) => Boolean(value), { toClassOnly: true })
+  @Transform(({ value }) => (value ? 1 : 0), { toPlainOnly: true })
+  customer_confirmed: boolean = false;
 
   @Column({ type: 'bit', default: 0 })
-  rider_confirmed: boolean;
+  @Transform(({ value }) => Boolean(value), { toClassOnly: true })
+  @Transform(({ value }) => (value ? 1 : 0), { toPlainOnly: true })
+  rider_confirmed: boolean = false;
 
   // -----------------------------
   // ASSIGNMENT TRACKING
@@ -94,7 +100,9 @@ export class Order {
   assignment_attempts: number;
 
   @Column({ type: 'bit', default: 0 })
-  requires_manual_assignment: boolean;
+  @Transform(({ value }) => Boolean(value), { toClassOnly: true })
+  @Transform(({ value }) => (value ? 1 : 0), { toPlainOnly: true })
+  requires_manual_assignment: boolean = false;
 
   // -----------------------------
   // RATING & FEEDBACK

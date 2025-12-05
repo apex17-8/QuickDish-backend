@@ -1,4 +1,3 @@
-// src/payments/entities/payment.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -7,6 +6,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Order } from '../../orders/entities/order.entity';
 
@@ -14,6 +14,7 @@ export enum PaymentMethod {
   CARD = 'CARD',
   MPESA = 'MPESA',
   BANK_TRANSFER = 'BANK_TRANSFER',
+  CASH = 'CASH',
 }
 
 export enum PaymentStatus {
@@ -28,9 +29,14 @@ export enum PaymentGateway {
   PAYSTACK = 'PAYSTACK',
   MPESA = 'MPESA',
   FLUTTERWAVE = 'FLUTTERWAVE',
+  CASH = 'CASH',
 }
 
 @Entity('payments')
+@Index(['payment_reference'], { unique: true })
+@Index(['user_id'])
+@Index(['order_id'])
+@Index(['status'])
 export class Payment {
   @PrimaryGeneratedColumn()
   payment_id: number;
@@ -71,7 +77,17 @@ export class Payment {
   @Column({ type: 'nvarchar', length: 500, nullable: true })
   authorization_url: string | null;
 
-  @Column({ type: 'nvarchar', nullable: true })
+  // ADD THESE 3 MISSING FIELDS:
+  @Column({ type: 'nvarchar', length: 255, nullable: true })
+  access_code: string | null;
+
+  @Column({ type: 'nvarchar', length: 500, nullable: true })
+  description: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  metadata: string | null;
+
+  @Column({ type: 'nvarchar', length: 500, nullable: true })
   gateway_response: string | null;
 
   @Column({ type: 'nvarchar', length: 255, nullable: true })

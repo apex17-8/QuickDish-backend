@@ -1,10 +1,11 @@
-// src/orders/orders.service.ts
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -16,6 +17,7 @@ import {
   IsNull,
   Not,
 } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Order, OrderStatus, PaymentStatus } from './entities/order.entity';
 import { OrderItem } from '../order_items/entities/order_item.entity';
 import { Customer } from '../customers/entities/customer.entity';
@@ -28,8 +30,6 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { OrderQueryDto } from './dto/order-query.dto';
 import { PaymentsService } from '../payments/payments.service';
-import { OrderGateway } from '../websockets/gateways/order.gateway';
-import { OrderTrackingGateway } from '../websockets/gateways/order-tracking.gateway';
 
 @Injectable()
 export class OrderService {
@@ -60,9 +60,10 @@ export class OrderService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
 
+    @Inject(forwardRef(() => PaymentsService))
     private paymentsService: PaymentsService,
-    private orderGateway: OrderGateway,
-    private orderTrackingGateway: OrderTrackingGateway,
+
+    private eventEmitter: EventEmitter2,
   ) {}
 
   // ==================== CRUD OPERATIONS ====================
@@ -157,38 +158,50 @@ export class OrderService {
       customer.user?.user_id,
     );
 
-    // Emit WebSocket event
-    this.orderGateway.broadcastOrderUpdate({
+    // Emit order created event
+    this.eventEmitter.emit('order.created', {
       orderId: savedOrder.order_id,
-      type: 'statusUpdate',
+      customerId: customer.customer_id,
+      restaurantId: restaurant.restaurant_id,
       status: OrderStatus.Pending,
+      totalPrice: savedOrder.total_price,
     });
 
     return this.findOrderWithDetails(savedOrder.order_id);
   }
 
   async createOrderWithPayment(data: any) {
-    // Create order first
-    const order = await this.createOrderWithItems({
-      customer_id: data.customer_id,
-      restaurant_id: data.restaurant_id,
-      delivery_address: data.delivery_address,
-      notes: data.notes,
-      delivery_latitude: data.delivery_latitude,
-      delivery_longitude: data.delivery_longitude,
-      items: data.items,
-    });
+    try {
+      // First, create the order
+      const order = await this.createOrderWithItems({
+        customer_id: data.customer_id,
+        restaurant_id: data.restaurant_id,
+        delivery_address: data.delivery_address,
+        notes: data.notes,
+        delivery_latitude: data.delivery_latitude,
+        delivery_longitude: data.delivery_longitude,
+        items: data.items,
+      });
 
-    // Initialize payment
-    const payment = await this.paymentsService.initializePayment({
-      user_id: data.customer_id,
-      order_id: order.order_id,
-      email: data.email,
-      amount: order.total_price,
-      callback_url: data.callback_url,
-    });
+      // Then initialize payment through PaymentsService
+      const paymentResult = await this.paymentsService.initializePayment({
+        user_id: data.customer_id,
+        order_id: order.order_id,
+        email: data.email,
+        amount: order.total_price,
+        callback_url:
+          data.callback_url || `${process.env.FRONTEND_URL}/payment/verify`,
+      });
 
-    return { order, payment };
+      return {
+        order,
+        payment: paymentResult,
+        message: 'Order created and payment initialized successfully',
+      };
+    } catch (error) {
+      this.logger.error('Failed to create order with payment:', error);
+      throw new BadRequestException('Failed to create order with payment');
+    }
   }
 
   async findAll(): Promise<Order[]> {
@@ -430,16 +443,19 @@ export class OrderService {
       rider.user.user_id,
     );
 
-    // Emit WebSocket events
-    this.orderGateway.broadcastOrderUpdate({
+    // Emit events
+    this.eventEmitter.emit('order.rider.assigned', {
       orderId,
-      type: 'riderAssigned',
       riderId,
+      riderName: rider.user.name,
+      timestamp: new Date(),
     });
 
-    this.orderTrackingGateway.updateStatus({
+    this.eventEmitter.emit('order.delivery.started', {
       orderId,
-      status: OrderStatus.OnRoute,
+      riderId,
+      startedAt: new Date(),
+      estimatedDeliveryTime: this.calculateEstimatedDeliveryTime(updatedOrder),
     });
 
     return updatedOrder;
@@ -482,17 +498,22 @@ export class OrderService {
       undefined,
     );
 
-    // Emit WebSocket event
-    this.orderGateway.broadcastOrderUpdate({
+    // Emit event
+    this.eventEmitter.emit('order.status.updated', {
       orderId,
-      type: 'statusUpdate',
       status,
+      previousStatus,
+      timestamp: new Date(),
     });
 
-    this.orderTrackingGateway.updateStatus({
-      orderId,
-      status,
-    });
+    // If delivered, emit specific event
+    if (status === OrderStatus.Delivered) {
+      this.eventEmitter.emit('order.delivered', {
+        orderId,
+        deliveredAt: new Date(),
+        riderId: order.rider?.rider_id,
+      });
+    }
 
     return updatedOrder;
   }
@@ -520,11 +541,12 @@ export class OrderService {
       undefined,
     );
 
-    // Emit WebSocket event
-    this.orderGateway.broadcastOrderUpdate({
+    // Emit event
+    this.eventEmitter.emit('order.status.updated', {
       orderId,
-      type: 'statusUpdate',
       status: OrderStatus.Cancelled,
+      previousStatus,
+      timestamp: new Date(),
     });
 
     // If payment was made, initiate refund
@@ -563,12 +585,12 @@ export class OrderService {
       await this.updateRiderRating(order.rider.rider_id);
     }
 
-    // Emit WebSocket event
-    this.orderGateway.broadcastOrderUpdate({
+    // Emit event
+    this.eventEmitter.emit('order.rated', {
       orderId,
-      type: 'orderRated',
       rating,
       feedback,
+      timestamp: new Date(),
     });
 
     return updatedOrder;
@@ -581,6 +603,7 @@ export class OrderService {
 
     order.payment_status = PaymentStatus.Paid;
     order.status = OrderStatus.Accepted;
+    order.accepted_at = new Date();
 
     const updatedOrder = await this.orderRepository.save(order);
 
@@ -593,11 +616,18 @@ export class OrderService {
       undefined,
     );
 
-    // Emit WebSocket event
-    this.orderGateway.broadcastOrderUpdate({
+    // Emit events
+    this.eventEmitter.emit('order.status.updated', {
       orderId,
-      type: 'statusUpdate',
       status: OrderStatus.Accepted,
+      previousStatus: OrderStatus.Pending,
+      timestamp: new Date(),
+    });
+
+    this.eventEmitter.emit('order.payment.completed', {
+      orderId,
+      amount: order.total_price,
+      timestamp: new Date(),
     });
 
     return updatedOrder;
@@ -627,10 +657,11 @@ export class OrderService {
         undefined,
       );
 
-      // Emit WebSocket event
-      this.orderGateway.broadcastOrderUpdate({
+      // Emit event
+      this.eventEmitter.emit('order.delivered', {
         orderId,
-        type: 'orderDelivered',
+        deliveredAt: new Date(),
+        riderId: order.rider?.rider_id,
       });
     }
 
@@ -659,10 +690,11 @@ export class OrderService {
         undefined,
       );
 
-      // Emit WebSocket event
-      this.orderGateway.broadcastOrderUpdate({
+      // Emit event
+      this.eventEmitter.emit('order.delivered', {
         orderId,
-        type: 'orderDelivered',
+        deliveredAt: new Date(),
+        riderId: order.rider?.rider_id,
       });
     }
 
@@ -898,7 +930,6 @@ export class OrderService {
 
   private async initiateRefund(orderId: number, amount: number): Promise<void> {
     try {
-      // Integrate with payment gateway
       this.logger.log(`Initiating refund for order ${orderId}: ${amount}`);
 
       // Update payment status
@@ -914,6 +945,13 @@ export class OrderService {
         `Refund initiated: ${amount}`,
         undefined,
       );
+
+      // Emit event
+      this.eventEmitter.emit('order.refund.initiated', {
+        orderId,
+        amount,
+        timestamp: new Date(),
+      });
     } catch (error) {
       this.logger.error(
         `Failed to initiate refund for order ${orderId}:`,
@@ -1101,7 +1139,7 @@ export class OrderService {
     return searchQuery.getMany();
   }
 
-  //  EXPORT
+  // ==================== EXPORT ====================
 
   async exportOrders(filters: OrderQueryDto): Promise<any> {
     const orders = await this.findWithFilters(filters);
@@ -1129,7 +1167,7 @@ export class OrderService {
     };
   }
 
-  // CLEANUP 
+  // ==================== CLEANUP ====================
 
   async cleanupOldOrders(days: number = 90): Promise<number> {
     const cutoffDate = new Date();
@@ -1143,5 +1181,107 @@ export class OrderService {
       .execute();
 
     return result.affected || 0;
+  }
+
+  // ==================== DELIVERY ESTIMATION ====================
+
+  async getDeliveryEstimation(orderId: number) {
+    const order = await this.findOne(orderId);
+
+    if (!order) {
+      throw new NotFoundException(`Order ${orderId} not found`);
+    }
+
+    const estimatedTime = this.calculateEstimatedDeliveryTime(order);
+
+    return {
+      orderId,
+      status: order.status,
+      estimatedDeliveryTime: estimatedTime,
+      currentLocation: order.rider
+        ? {
+            riderId: order.rider.rider_id,
+            riderName: order.rider.user?.name,
+            latitude: order.rider.currentLatitude,
+            longitude: order.rider.currentLongitude,
+          }
+        : null,
+      restaurantLocation: {
+        name: order.restaurant.name,
+        address: order.restaurant.address,
+      },
+      deliveryAddress: order.delivery_address,
+    };
+  }
+
+  // ==================== ADMIN METHODS ====================
+
+  async getAdminDashboardStats() {
+    const [
+      totalOrders,
+      todayOrders,
+      pendingOrders,
+      activeRiders,
+      totalRevenue,
+      topRestaurants,
+    ] = await Promise.all([
+      this.orderRepository.count(),
+      this.orderRepository.count({
+        where: {
+          created_at: MoreThan(new Date(new Date().setHours(0, 0, 0, 0))),
+        },
+      }),
+      this.orderRepository.count({
+        where: {
+          status: In([
+            OrderStatus.Pending,
+            OrderStatus.Accepted,
+            OrderStatus.Preparing,
+          ]),
+        },
+      }),
+      this.riderRepository.count({ where: { is_online: true } }),
+      this.orderRepository
+        .createQueryBuilder('order')
+        .select('SUM(order.total_price)', 'revenue')
+        .where('order.status = :status', { status: OrderStatus.Delivered })
+        .andWhere('order.payment_status = :paymentStatus', {
+          paymentStatus: PaymentStatus.Paid,
+        })
+        .getRawOne(),
+      this.orderRepository
+        .createQueryBuilder('order')
+        .select('restaurant.name', 'name')
+        .addSelect('COUNT(order.order_id)', 'orderCount')
+        .addSelect('SUM(order.total_price)', 'revenue')
+        .leftJoin('order.restaurant', 'restaurant')
+        .where('order.created_at >= :date', {
+          date: new Date(new Date().setDate(new Date().getDate() - 7)),
+        })
+        .groupBy('restaurant.restaurant_id, restaurant.name')
+        .orderBy('orderCount', 'DESC')
+        .limit(5)
+        .getRawMany(),
+    ]);
+
+    return {
+      overview: {
+        totalOrders,
+        todayOrders,
+        pendingOrders,
+        activeRiders,
+        totalRevenue: totalRevenue?.revenue || 0,
+      },
+      topRestaurants,
+      recentActivity: await this.getRecentActivity(),
+    };
+  }
+
+  private async getRecentActivity() {
+    return this.orderRepository.find({
+      relations: ['customer.user', 'restaurant', 'rider.user'],
+      order: { created_at: 'DESC' },
+      take: 10,
+    });
   }
 }

@@ -4,8 +4,8 @@
 @baseUrl = http://localhost:8000
 @adminEmail = admin@gmail.com
 @adminPassword = admin1234567
-@customerEmail = customer@gmail.com
-@customerPassword = customer123
+@customerEmail = customer1@gmail.com
+@customerPassword = customer1234
 @restaurantEmail = restaurant@example.com
 @restaurantPassword = restaurant123
 
@@ -55,11 +55,11 @@ POST {{baseUrl}}/auth/signup
 Content-Type: application/json
 
 {
-  "name": "John Doe",
+  "name": "John Doeh",
   "email": "{{customerEmail}}",
   "password": "{{customerPassword}}",
   "role": "customer",
-  "phone": "+254711111111"
+  "phone": "+2547110911111"
 }
 
 ### Sign In as Customer

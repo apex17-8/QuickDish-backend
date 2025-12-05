@@ -1,4 +1,3 @@
-// src/orders/orders.module.ts
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrderService } from './orders.service';

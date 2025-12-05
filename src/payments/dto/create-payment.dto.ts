@@ -1,5 +1,11 @@
-// payments/dto/create-payment.dto.ts
-import { IsNumber, IsString, IsEmail, IsOptional } from 'class-validator';
+import {
+  IsNumber,
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsUrl,
+  Min,
+} from 'class-validator';
 
 export class CreatePaymentDto {
   @IsNumber()
@@ -12,10 +18,20 @@ export class CreatePaymentDto {
   email: string;
 
   @IsNumber()
+  @Min(1)
   amount: number;
 
+  @IsOptional()
   @IsString()
-  callback_url: string;
+  currency?: string;
+
+  @IsOptional()
+  @IsUrl()
+  callback_url?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   @IsOptional()
   metadata?: any;
@@ -23,10 +39,12 @@ export class CreatePaymentDto {
 
 export interface VerifyResponse {
   status: boolean;
+  message: string;
   data: any;
 }
 
 export interface FetchTransactionResponse {
   status: boolean;
+  message: string;
   data: any;
 }

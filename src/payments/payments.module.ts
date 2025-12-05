@@ -1,6 +1,6 @@
-// src/payments/payments.module.ts
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
 import { PaymentsService } from './payments.service';
 import { PaymentsController } from './payments.controller';
 import { PaystackWebhookController } from './payments.webhook.controller';
@@ -10,8 +10,9 @@ import { OrdersModule } from '../orders/orders.module';
 
 @Module({
   imports: [
+    ConfigModule,
     TypeOrmModule.forFeature([Payment, Order]),
-    forwardRef(() => OrdersModule), // circular dependency
+    forwardRef(() => OrdersModule),
   ],
   controllers: [PaymentsController, PaystackWebhookController],
   providers: [PaymentsService],

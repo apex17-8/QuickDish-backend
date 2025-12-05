@@ -1,8 +1,34 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateOrderDto } from './create-order.dto';
-import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  Min,
+  Max,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
-export class UpdateOrderDto extends PartialType(CreateOrderDto) {
+export class UpdateOrderItemDto {
+  @IsOptional()
+  @IsNumber()
+  menu_item_id?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  quantity?: number;
+
+  @IsOptional()
+  @IsString()
+  special_instructions?: string;
+}
+
+export class UpdateOrderDto {
+  @IsOptional()
+  @IsString()
+  delivery_address?: string;
+
   @IsOptional()
   @IsString()
   notes?: string;
@@ -18,4 +44,28 @@ export class UpdateOrderDto extends PartialType(CreateOrderDto) {
   @Min(-180)
   @Max(180)
   delivery_longitude?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateOrderItemDto)
+  items?: UpdateOrderItemDto[];
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsNumber()
+  rider_id?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(5)
+  customer_rating?: number;
+
+  @IsOptional()
+  @IsString()
+  customer_feedback?: string;
 }

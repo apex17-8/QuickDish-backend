@@ -10,7 +10,20 @@ import {
   Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CreateOrderItemDto } from '../../order_items/dto/create-order_item.dto';
+
+class CreateOrderItemDto {
+  @IsInt()
+  @IsNotEmpty()
+  menu_item_id: number;
+
+  @IsInt()
+  @Min(1)
+  quantity: number;
+
+  @IsOptional()
+  @IsString()
+  special_instructions?: string;
+}
 
 export class CreateOrderDto {
   @IsInt()

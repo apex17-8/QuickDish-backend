@@ -21,7 +21,7 @@ import { UpdateStatusDto } from './dto/update-status.dto';
 import { SubmitRatingDto } from './dto/submit-rating.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { OrderQueryDto } from './dto/order-query.dto';
-import { CreateOrderWithPaymentDto } from './../payments/dto/create-order-with-payment.dto';
+import { CreateOrderWithPaymentDto } from '../payments/dto/create-order-with-payment.dto';
 import { PaymentsService } from '../payments/payments.service';
 
 @Controller('orders')
