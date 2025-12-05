@@ -12,12 +12,15 @@ export class CustomerService {
   ) {}
 
   async findAll(): Promise<Customer[]> {
-    return this.customerRepository.find();
+    return this.customerRepository.find({
+      relations: ['user', 'orders'],
+    });
   }
 
   async findOne(id: number): Promise<Customer> {
     const customer = await this.customerRepository.findOne({
       where: { customer_id: id },
+      relations: ['user', 'orders'],
     });
     if (!customer) throw new NotFoundException(`Customer ${id} not found`);
     return customer;
@@ -38,5 +41,16 @@ export class CustomerService {
   async update(id: number, dto: UpdateCustomerDto): Promise<Customer> {
     await this.customerRepository.update(id, dto);
     return this.findOne(id);
+  }
+
+   async findByUserId(userId: number): Promise<Customer> {
+    const customer = await this.customerRepository.findOne({
+      where: { user: { user_id: userId } },
+      relations: ['user'],
+    });
+    if (!customer) {
+      throw new NotFoundException(`Customer with user ID ${userId} not found`);
+    }
+    return customer;
   }
 }

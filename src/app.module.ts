@@ -5,6 +5,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
+import { CustomersModule } from './customers/customers.module';
 import { RestaurantsModule } from './restaurants/restaurants.module';
 import { OrdersModule } from './orders/orders.module';
 import { MenuItemsModule } from './menu_items/menu_items.module';
@@ -15,36 +16,18 @@ import { RiderLocationsModule } from './rider_locations/rider_locations.module';
 import { OrderStatusLogsModule } from './order-status-logs/order_status_logs.module';
 import { RestaurantMenuCategoriesModule } from './restaurant-menu_categories/restaurant-menu_categories.module';
 import { AuthModule } from './auth/auth.module';
-import { databaseConfig } from './database/database.config';
 import { DatabaseModule } from './database/database.module';
 import { WebsocketsModule } from './websockets/websockets.module';
-import { CustomersModule } from './customers/customers.module';
-import { MessagesModule } from './messages/messages.module';
 
 @Module({
   imports: [
-    // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.local', '.env'], // Load local first, then .env
-      load: [databaseConfig],
+      envFilePath: ['.env.local', '.env'],
     }),
-
-    // Event Emitter for WebSocket communication
-    EventEmitterModule.forRoot({
-      wildcard: true,
-      delimiter: '.',
-      maxListeners: 20,
-      verboseMemoryLeak: true,
-    }),
-
-    // Database
+    EventEmitterModule.forRoot(),
     DatabaseModule,
-
-    // Auth
     AuthModule,
-
-    // Core Modules
     UsersModule,
     CustomersModule,
     RestaurantsModule,
@@ -56,9 +39,6 @@ import { MessagesModule } from './messages/messages.module';
     RiderLocationsModule,
     OrderStatusLogsModule,
     RestaurantMenuCategoriesModule,
-    MessagesModule,
-
-    // WebSockets
     WebsocketsModule,
   ],
   controllers: [AppController],

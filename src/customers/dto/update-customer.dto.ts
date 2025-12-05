@@ -1,4 +1,15 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateCustomerDto } from './create-customer.dto';
+import { IsOptional, IsNumber, IsString, Min } from 'class-validator';
 
-export class UpdateCustomerDto extends PartialType(CreateCustomerDto) {}
+export class UpdateCustomerDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  loyalty_points?: number;
+
+  @IsOptional()
+  @IsString()
+  default_address?: string;
+
+  @IsOptional()
+  preferences?: any;
+}
