@@ -1,4 +1,3 @@
-// src/users/entities/user.entity.ts
 import {
   Column,
   Entity,
@@ -13,7 +12,6 @@ import { Order } from '../../orders/entities/order.entity';
 import { Rider } from '../../riders/entities/rider.entity';
 import { Customer } from '../../customers/entities/customer.entity';
 
-// roles
 export enum UserRole {
   SuperAdmin = 'super_admin',
   RestaurantOwner = 'restaurant_owner',
@@ -49,7 +47,8 @@ export class User {
   @Column({ type: 'varchar', length: 50, default: UserRole.Customer })
   role: UserRole;
 
-  @Column({ type: 'boolean', default: true })
+  // FIX: For MSSQL, use 'bit' instead of 'boolean'
+  @Column({ type: 'bit', default: 1 }) // 1 = true, 0 = false
   is_active: boolean;
 
   @Column({ type: 'datetime', nullable: true })
@@ -61,25 +60,19 @@ export class User {
   @UpdateDateColumn({ type: 'datetime2' })
   updated_at: Date;
 
-  //RELATIONSHIPS
-
-  // Restaurants owned by this user (role = restaurant_owner)
+  // RELATIONSHIPS
   @OneToMany(() => Restaurant, (restaurant) => restaurant.owner)
   restaurantsOwned: Restaurant[];
 
-  // Staff assignments (role = manager, customer_care, rider)
   @OneToMany(() => RestaurantStaff, (staff) => staff.user)
   staffAssignments: RestaurantStaff[];
 
-  // Orders placed by this user (role = customer)
   @OneToMany(() => Order, (order) => order.customer)
   orders: Order[];
 
-  // Rider-specific info (role = rider)
   @OneToMany(() => Rider, (rider) => rider.user)
   riders: Rider[];
 
-  // Customer-specific info (role = customer)
   @OneToMany(() => Customer, (customer) => customer.user)
   customers: Customer[];
 }
