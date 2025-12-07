@@ -6,8 +6,9 @@ import { DataSource } from 'typeorm';
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService,
-        @InjectDataSource() private readonly dataSource: DataSource,
+  constructor(
+    private readonly appService: AppService,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   @Public()
@@ -15,7 +16,7 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
-  
+
   @Public()
   @Post('migrate')
   async runMigrations() {
@@ -24,13 +25,13 @@ export class AppController {
       return {
         success: true,
         message: 'Migrations completed successfully',
-        migrationsRun: migrations.map(m => m.name)
+        migrationsRun: migrations.map((m) => m.name),
       };
     } catch (error) {
       return {
         success: false,
         message: 'Migration failed',
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -41,18 +42,18 @@ export class AppController {
     try {
       const pendingMigrations = await this.dataSource.showMigrations();
       const executedMigrations = await this.dataSource.query(
-        'SELECT * FROM migrations ORDER BY timestamp DESC'
+        'SELECT * FROM migrations ORDER BY timestamp DESC',
       );
-      
+
       return {
         success: true,
         pendingMigrations,
-        executedMigrations: executedMigrations || []
+        executedMigrations: executedMigrations || [],
       };
     } catch (error) {
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }

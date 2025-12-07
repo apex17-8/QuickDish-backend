@@ -1,3 +1,4 @@
+// src/users/entities/user.entity.ts
 import {
   Column,
   Entity,
@@ -12,7 +13,7 @@ import { Order } from '../../orders/entities/order.entity';
 import { Rider } from '../../riders/entities/rider.entity';
 import { Customer } from '../../customers/entities/customer.entity';
 
-// TypeScript enum for roles
+// roles
 export enum UserRole {
   SuperAdmin = 'super_admin',
   RestaurantOwner = 'restaurant_owner',
@@ -40,10 +41,19 @@ export class User {
   phone: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
+  profile_picture?: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
   hashedRefreshedToken?: string | null;
 
   @Column({ type: 'varchar', length: 50, default: UserRole.Customer })
   role: UserRole;
+
+  @Column({ type: 'boolean', default: true })
+  is_active: boolean;
+
+  @Column({ type: 'datetime', nullable: true })
+  last_login_at: Date;
 
   @CreateDateColumn({ type: 'datetime2' })
   created_at: Date;
@@ -51,9 +61,7 @@ export class User {
   @UpdateDateColumn({ type: 'datetime2' })
   updated_at: Date;
 
-  /** ===============================
-   *  RELATIONSHIPS
-   *  =============================== */
+  //RELATIONSHIPS
 
   // Restaurants owned by this user (role = restaurant_owner)
   @OneToMany(() => Restaurant, (restaurant) => restaurant.owner)

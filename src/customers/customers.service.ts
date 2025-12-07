@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './entities/customer.entity';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { CreateCustomerDto } from './dto/create-customer.dto';
 
 @Injectable()
 export class CustomerService {
@@ -10,6 +11,11 @@ export class CustomerService {
     @InjectRepository(Customer)
     private readonly customerRepository: Repository<Customer>,
   ) {}
+
+  async create(createCustomerDto: CreateCustomerDto): Promise<Customer> {
+    const customer = this.customerRepository.create(createCustomerDto);
+    return this.customerRepository.save(customer);
+  }
 
   async findAll(): Promise<Customer[]> {
     return this.customerRepository.find({
@@ -43,14 +49,34 @@ export class CustomerService {
     return this.findOne(id);
   }
 
-   async findByUserId(userId: number): Promise<Customer> {
+  async remove(id: number): Promise<void> {
+    const result = await this.customerRepository.delete(id);
+    if (result.affected === 0) {
+      throw new NotFoundException(`Customer ${id} not found`);
+    }
+  }
+
+  async findByUserId(userId: number): Promise<Customer> {
     const customer = await this.customerRepository.findOne({
       where: { user: { user_id: userId } },
-      relations: ['user'],
+      relations: ['user', 'orders'],
     });
     if (!customer) {
       throw new NotFoundException(`Customer with user ID ${userId} not found`);
     }
     return customer;
+  }
+
+  async getCustomerOrders(userId: number): Promise<any[]> {
+    const customer = await this.customerRepository.findOne({
+      where: { user: { user_id: userId } },
+      relations: ['orders'],
+    });
+
+    if (!customer) {
+      throw new NotFoundException(`Customer with user ID ${userId} not found`);
+    }
+
+    return customer.orders || [];
   }
 }
