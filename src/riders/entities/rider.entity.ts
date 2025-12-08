@@ -12,7 +12,7 @@ import {
 import { User } from '../../users/entities/user.entity';
 import { Order } from '../../orders/entities/order.entity';
 import { RiderLocation } from '../../rider_locations/entities/rider_location.entity';
-
+import { RiderRequest } from '../../rider-request/entities/rider-request.entity';
 @Entity('riders')
 export class Rider {
   @PrimaryGeneratedColumn()
@@ -27,6 +27,9 @@ export class Rider {
 
   @OneToMany(() => Order, (order) => order.rider)
   orders: Order[];
+
+  @OneToMany(() => RiderRequest, (request) => request.rider)
+  requests: RiderRequest[];
 
   @Column({ type: 'varchar', length: 50 })
   vehicle_type: string;

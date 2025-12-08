@@ -18,14 +18,15 @@ import { RestaurantMenuCategoriesModule } from './restaurant-menu_categories/res
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { WebsocketsModule } from './websockets/websockets.module';
-import {databaseConfig} from './database/database.config'
+import { databaseConfig } from './database/database.config';
+import { RiderRequestsModule } from './rider-request/rider-request.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      load: [databaseConfig]
+      load: [databaseConfig],
     }),
     EventEmitterModule.forRoot(),
     DatabaseModule,
@@ -42,6 +43,7 @@ import {databaseConfig} from './database/database.config'
     OrderStatusLogsModule,
     RestaurantMenuCategoriesModule,
     WebsocketsModule,
+    RiderRequestsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

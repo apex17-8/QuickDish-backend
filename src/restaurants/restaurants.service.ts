@@ -1,10 +1,21 @@
-// src/restaurants/restaurants.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+// src/restaurants/restaurants.service.ts - FIXED CREATE METHOD
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Restaurant } from './entities/restaurant.entity';
 import { MenuItem } from '../menu_items/entities/menu_item.entity';
 import { RestaurantMenuCategory } from '../restaurant-menu_categories/entities/restaurant-menu_category.entity';
+import { CreateRestaurantDto } from './dto/create-restaurant.dto';
+import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
+import { User, UserRole } from '../users/entities/user.entity';
+import {
+  RestaurantStaff,
+  StaffRole,
+} from '../restaurant_staff/entities/restaurant_staff.entity';
 
 @Injectable()
 export class RestaurantService {
@@ -15,24 +26,353 @@ export class RestaurantService {
     private readonly menuItemRepository: Repository<MenuItem>,
     @InjectRepository(RestaurantMenuCategory)
     private readonly categoryRepository: Repository<RestaurantMenuCategory>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(RestaurantStaff)
+    private readonly staffRepository: Repository<RestaurantStaff>,
   ) {}
+
+  // ========== RESTAURANT OWNER METHODS ==========
+
+  // CREATE RESTAURANT - FIXED VERSION
+  async createRestaurant(
+    ownerId: number,
+    createRestaurantDto: CreateRestaurantDto,
+  ): Promise<Restaurant> {
+    const owner = await this.userRepository.findOne({
+      where: { user_id: ownerId },
+    });
+
+    if (!owner) {
+      throw new NotFoundException(`User with ID ${ownerId} not found`);
+    }
+
+    // Check if user can create restaurants
+    if (![UserRole.RestaurantOwner, UserRole.SuperAdmin].includes(owner.role)) {
+      throw new ForbiddenException(
+        'Only restaurant owners can create restaurants',
+      );
+    }
+
+    // Convert is_active string to boolean - FIXED
+    let isActive = true; // Default to true
+    if (createRestaurantDto.is_active !== undefined) {
+      if (typeof createRestaurantDto.is_active === 'string') {
+        isActive =
+          createRestaurantDto.is_active === 'true' ||
+          createRestaurantDto.is_active === '1';
+      } else if (typeof createRestaurantDto.is_active === 'boolean') {
+        isActive = createRestaurantDto.is_active;
+      }
+    }
+
+    // Create restaurant object directly without using this.restaurantRepository.create()
+    const restaurant = new Restaurant();
+    restaurant.name = createRestaurantDto.name;
+    restaurant.address = createRestaurantDto.address;
+    restaurant.phone = createRestaurantDto.phone;
+    restaurant.cuisine = createRestaurantDto.cuisine || '';
+    restaurant.logo_url = createRestaurantDto.logo_url || '';
+    restaurant.price_range = createRestaurantDto.price_range || '';
+    restaurant.delivery_fee = createRestaurantDto.delivery_fee ?? 0;
+    restaurant.estimated_delivery_time =
+      createRestaurantDto.estimated_delivery_time ?? 0; // Default to 0 if null
+    restaurant.description = createRestaurantDto.description || '';
+    restaurant.is_active = isActive;
+    restaurant.owner = owner;
+    restaurant.rating = 0; // Default rating
+
+    const savedRestaurant = await this.restaurantRepository.save(restaurant);
+    return savedRestaurant;
+  }
+
+  // GET RESTAURANTS BY OWNER OR MANAGER
+  async findByOwnerOrManager(
+    userId: number,
+    userRole: string,
+  ): Promise<Restaurant[]> {
+    if (userRole === UserRole.SuperAdmin.toString()) {
+      // Super admin can see all restaurants
+      return this.restaurantRepository.find({
+        relations: ['menuItems', 'menuCategories', 'owner'],
+        order: { created_at: 'DESC' },
+      });
+    }
+
+    if (userRole === UserRole.RestaurantOwner.toString()) {
+      // Restaurant owners see their own restaurants
+      return this.restaurantRepository.find({
+        where: { owner: { user_id: userId } },
+        relations: ['menuItems', 'menuCategories', 'owner'],
+        order: { created_at: 'DESC' },
+      });
+    }
+
+    if (userRole === UserRole.Manager.toString()) {
+      // Managers see restaurants they're assigned to
+      const staffAssignments = await this.staffRepository.find({
+        where: {
+          user: { user_id: userId },
+          role: StaffRole.Manager,
+        },
+        relations: ['restaurant'],
+      });
+
+      const restaurantIds = staffAssignments.map(
+        (sa) => sa.restaurant.restaurant_id,
+      );
+
+      if (restaurantIds.length === 0) {
+        return [];
+      }
+
+      return this.restaurantRepository.find({
+        where: { restaurant_id: In(restaurantIds) },
+        relations: ['menuItems', 'menuCategories', 'owner'],
+        order: { created_at: 'DESC' },
+      });
+    }
+
+    throw new ForbiddenException(
+      'You do not have permission to view restaurants',
+    );
+  }
+
+  // UPDATE RESTAURANT WITH OWNERSHIP CHECK
+  async updateRestaurant(
+    restaurantId: number,
+    userId: number,
+    userRole: string,
+    updateRestaurantDto: UpdateRestaurantDto,
+  ): Promise<Restaurant> {
+    const restaurant = await this.restaurantRepository.findOne({
+      where: { restaurant_id: restaurantId },
+      relations: ['owner'],
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException(`Restaurant ${restaurantId} not found`);
+    }
+
+    // Check permissions
+    if (userRole !== UserRole.SuperAdmin.toString()) {
+      if (
+        userRole === UserRole.RestaurantOwner.toString() &&
+        restaurant.owner.user_id !== userId
+      ) {
+        throw new ForbiddenException('You do not own this restaurant');
+      }
+
+      // For managers, check if they're assigned to this restaurant
+      if (userRole === UserRole.Manager.toString()) {
+        const isManager = await this.checkIfManager(userId, restaurantId);
+        if (!isManager) {
+          throw new ForbiddenException(
+            'You are not a manager of this restaurant',
+          );
+        }
+      }
+    }
+
+    // Update all fields that exist in the DTO
+    if (updateRestaurantDto.name !== undefined) {
+      restaurant.name = updateRestaurantDto.name;
+    }
+    if (updateRestaurantDto.address !== undefined) {
+      restaurant.address = updateRestaurantDto.address;
+    }
+    if (updateRestaurantDto.phone !== undefined) {
+      restaurant.phone = updateRestaurantDto.phone;
+    }
+    if (updateRestaurantDto.cuisine !== undefined) {
+      restaurant.cuisine = updateRestaurantDto.cuisine;
+    }
+    if (updateRestaurantDto.logo_url !== undefined) {
+      restaurant.logo_url = updateRestaurantDto.logo_url;
+    }
+    if (updateRestaurantDto.price_range !== undefined) {
+      restaurant.price_range = updateRestaurantDto.price_range;
+    }
+    if (updateRestaurantDto.delivery_fee !== undefined) {
+      restaurant.delivery_fee = updateRestaurantDto.delivery_fee;
+    }
+    if (updateRestaurantDto.estimated_delivery_time !== undefined) {
+      restaurant.estimated_delivery_time =
+        updateRestaurantDto.estimated_delivery_time;
+    }
+    if (updateRestaurantDto.description !== undefined) {
+      restaurant.description = updateRestaurantDto.description;
+    }
+    if (updateRestaurantDto.is_active !== undefined) {
+      // Convert string to boolean for is_active
+      if (typeof updateRestaurantDto.is_active === 'string') {
+        restaurant.is_active =
+          updateRestaurantDto.is_active === 'true' ||
+          updateRestaurantDto.is_active === '1';
+      } else {
+        restaurant.is_active = updateRestaurantDto.is_active;
+      }
+    }
+
+    return this.restaurantRepository.save(restaurant);
+  }
+
+  // DELETE RESTAURANT
+  async deleteRestaurant(restaurantId: number, ownerId: number): Promise<void> {
+    const restaurant = await this.restaurantRepository.findOne({
+      where: { restaurant_id: restaurantId },
+      relations: ['owner'],
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException(`Restaurant ${restaurantId} not found`);
+    }
+
+    // Check ownership
+    if (restaurant.owner.user_id !== ownerId) {
+      throw new ForbiddenException('You do not own this restaurant');
+    }
+
+    await this.restaurantRepository.remove(restaurant);
+  }
+
+  // ADD MENU ITEM WITH OWNERSHIP CHECK
+  async addMenuItem(
+    restaurantId: number,
+    userId: number,
+    userRole: string,
+    menuItem: Partial<MenuItem>,
+  ): Promise<MenuItem> {
+    const restaurant = await this.restaurantRepository.findOne({
+      where: { restaurant_id: restaurantId },
+      relations: ['owner'],
+    });
+
+    if (!restaurant) {
+      throw new NotFoundException(`Restaurant ${restaurantId} not found`);
+    }
+
+    // Check permissions
+    if (userRole !== UserRole.SuperAdmin.toString()) {
+      if (
+        userRole === UserRole.RestaurantOwner.toString() &&
+        restaurant.owner.user_id !== userId
+      ) {
+        throw new ForbiddenException('You do not own this restaurant');
+      }
+
+      if (userRole === UserRole.Manager.toString()) {
+        const isManager = await this.checkIfManager(userId, restaurantId);
+        if (!isManager) {
+          throw new ForbiddenException(
+            'You are not a manager of this restaurant',
+          );
+        }
+      }
+    }
+
+    // Handle is_available conversion - since it's a number in the entity
+    let isAvailable = 1; // Default to available
+    if (menuItem.is_available !== undefined) {
+      if (typeof menuItem.is_available === 'boolean') {
+        isAvailable = menuItem.is_available ? 1 : 0;
+      } else if (typeof menuItem.is_available === 'number') {
+        isAvailable = menuItem.is_available;
+      } else if (typeof menuItem.is_available === 'string') {
+        isAvailable =
+          menuItem.is_available === 'true' || menuItem.is_available === '1'
+            ? 1
+            : 0;
+      }
+    }
+
+    const item = this.menuItemRepository.create({
+      name: menuItem.name,
+      description: menuItem.description,
+      price: menuItem.price,
+      restaurant: restaurant,
+      category: menuItem.category,
+      category_id: menuItem.category_id,
+      image_url: menuItem.image_url,
+      is_available: isAvailable,
+    });
+
+    return this.menuItemRepository.save(item);
+  }
+
+  // UPDATE CATEGORY WITH OWNERSHIP CHECK
+  async updateCategory(
+    categoryId: number,
+    userId: number,
+    userRole: string,
+    updateData: Partial<RestaurantMenuCategory>,
+  ): Promise<RestaurantMenuCategory> {
+    const category = await this.categoryRepository.findOne({
+      where: { category_id: categoryId },
+      relations: ['restaurant', 'restaurant.owner'],
+    });
+
+    if (!category) {
+      throw new NotFoundException(`Category ${categoryId} not found`);
+    }
+
+    // Check permissions
+    if (userRole !== UserRole.SuperAdmin.toString()) {
+      if (
+        userRole === UserRole.RestaurantOwner.toString() &&
+        category.restaurant.owner.user_id !== userId
+      ) {
+        throw new ForbiddenException('You do not own this restaurant');
+      }
+
+      if (userRole === UserRole.Manager.toString()) {
+        const isManager = await this.checkIfManager(
+          userId,
+          category.restaurant.restaurant_id,
+        );
+        if (!isManager) {
+          throw new ForbiddenException(
+            'You are not a manager of this restaurant',
+          );
+        }
+      }
+    }
+
+    Object.assign(category, updateData);
+    return this.categoryRepository.save(category);
+  }
+
+  // CHECK IF USER IS MANAGER OF RESTAURANT
+  private async checkIfManager(
+    userId: number,
+    restaurantId: number,
+  ): Promise<boolean> {
+    const staffAssignment = await this.staffRepository.findOne({
+      where: {
+        user: { user_id: userId },
+        restaurant: { restaurant_id: restaurantId },
+        role: StaffRole.Manager,
+      },
+    });
+    return !!staffAssignment;
+  }
+
+  // ========== KEEP YOUR EXISTING METHODS BELOW ==========
 
   async findAll(): Promise<Restaurant[]> {
     return this.restaurantRepository.find({
-      relations: ['menuItems', 'menuCategories'], // 🔴 FIXED: Changed 'menu_item' to 'menuItems'
+      relations: ['menuItems', 'menuCategories', 'owner'],
     });
   }
 
-  // 🔴 ADD THIS METHOD
   async findFeatured(): Promise<Restaurant[]> {
     try {
       console.log('Finding featured restaurants...');
 
-      // Option 1: Try to get real data from database
       const existingRestaurants = await this.restaurantRepository.find({
         take: 6,
-        order: { rating: 'DESC' }, // Order by highest rating
-        relations: ['menuItems', 'menuCategories'],
+        order: { rating: 'DESC' },
+        relations: ['menuItems', 'menuCategories', 'owner'],
       });
 
       if (existingRestaurants.length > 0) {
@@ -42,12 +382,10 @@ export class RestaurantService {
         return existingRestaurants;
       }
 
-      // Option 2: If no restaurants in DB, return mock data
       console.log('No restaurants in database, returning mock data');
       return this.getMockFeaturedRestaurants() as Restaurant[];
     } catch (error) {
       console.error('Error in findFeatured:', error);
-      // Return mock data as fallback
       return this.getMockFeaturedRestaurants() as Restaurant[];
     }
   }
@@ -55,35 +393,13 @@ export class RestaurantService {
   async findOne(id: number): Promise<Restaurant> {
     const restaurant = await this.restaurantRepository.findOne({
       where: { restaurant_id: id },
-      relations: ['menuItems', 'menuCategories'], // 🔴 FIXED: Changed 'menu_item' to 'menuItems'
+      relations: ['menuItems', 'menuCategories', 'owner'],
     });
     if (!restaurant) throw new NotFoundException(`Restaurant ${id} not found`);
     return restaurant;
   }
 
-  async addMenuItem(
-    restaurantId: number,
-    menuItem: Partial<MenuItem>,
-  ): Promise<MenuItem> {
-    const restaurant = await this.findOne(restaurantId);
-    const item = this.menuItemRepository.create({ ...menuItem, restaurant });
-    return this.menuItemRepository.save(item);
-  }
-
-  async updateCategory(
-    categoryId: number,
-    updateData: Partial<RestaurantMenuCategory>,
-  ): Promise<RestaurantMenuCategory> {
-    const category = await this.categoryRepository.findOne({
-      where: { category_id: categoryId },
-    });
-    if (!category)
-      throw new NotFoundException(`Category ${categoryId} not found`);
-    Object.assign(category, updateData);
-    return this.categoryRepository.save(category);
-  }
-
-  // 🔴 ADD THIS HELPER METHOD FOR MOCK DATA
+  // Keep your mock data method exactly as is
   private getMockFeaturedRestaurants(): any[] {
     return [
       {
@@ -112,150 +428,6 @@ export class RestaurantService {
           {
             category_id: 1,
             name: 'Pizza',
-          },
-        ],
-      },
-      {
-        restaurant_id: 2,
-        name: 'Burger Kingdom',
-        address: '456 Oak Ave, Brooklyn, NY',
-        phone: '555-5678',
-        logo_url:
-          'https://via.placeholder.com/150x150/45B7D1/FFFFFF?text=Burger',
-        rating: 4.3,
-        cuisine: 'American',
-        delivery_time: '20-30 min',
-        price_range: '$',
-        created_at: new Date(),
-        updated_at: new Date(),
-        menuItems: [
-          {
-            menu_item_id: 2,
-            name: 'Cheeseburger Deluxe',
-            price: 8.99,
-            image_url:
-              'https://via.placeholder.com/100x100/96CEB4/FFFFFF?text=Burger',
-          },
-        ],
-        menuCategories: [
-          {
-            category_id: 2,
-            name: 'Burgers',
-          },
-        ],
-      },
-      {
-        restaurant_id: 3,
-        name: 'Sushi Master',
-        address: '789 Pine Rd, Queens, NY',
-        phone: '555-9012',
-        logo_url:
-          'https://via.placeholder.com/150x150/FECA57/FFFFFF?text=Sushi',
-        rating: 4.7,
-        cuisine: 'Japanese',
-        delivery_time: '30-40 min',
-        price_range: '$$$',
-        created_at: new Date(),
-        updated_at: new Date(),
-        menuItems: [
-          {
-            menu_item_id: 3,
-            name: 'California Roll',
-            price: 14.99,
-            image_url:
-              'https://via.placeholder.com/100x100/FF9F1A/FFFFFF?text=Sushi',
-          },
-        ],
-        menuCategories: [
-          {
-            category_id: 3,
-            name: 'Sushi',
-          },
-        ],
-      },
-      {
-        restaurant_id: 4,
-        name: 'Taco Fiesta',
-        address: '321 Elm St, Bronx, NY',
-        phone: '555-3456',
-        logo_url: 'https://via.placeholder.com/150x150/9B5DE5/FFFFFF?text=Taco',
-        rating: 4.4,
-        cuisine: 'Mexican',
-        delivery_time: '15-25 min',
-        price_range: '$',
-        created_at: new Date(),
-        updated_at: new Date(),
-        menuItems: [
-          {
-            menu_item_id: 4,
-            name: 'Chicken Tacos (3 pcs)',
-            price: 10.99,
-            image_url:
-              'https://via.placeholder.com/100x100/F15BB5/FFFFFF?text=Taco',
-          },
-        ],
-        menuCategories: [
-          {
-            category_id: 4,
-            name: 'Tacos',
-          },
-        ],
-      },
-      {
-        restaurant_id: 5,
-        name: 'Curry House',
-        address: '654 Maple Dr, Manhattan, NY',
-        phone: '555-7890',
-        logo_url:
-          'https://via.placeholder.com/150x150/00BBF9/FFFFFF?text=Curry',
-        rating: 4.6,
-        cuisine: 'Indian',
-        delivery_time: '35-45 min',
-        price_range: '$$',
-        created_at: new Date(),
-        updated_at: new Date(),
-        menuItems: [
-          {
-            menu_item_id: 5,
-            name: 'Butter Chicken',
-            price: 16.99,
-            image_url:
-              'https://via.placeholder.com/100x100/00F5D4/FFFFFF?text=Curry',
-          },
-        ],
-        menuCategories: [
-          {
-            category_id: 5,
-            name: 'Curry',
-          },
-        ],
-      },
-      {
-        restaurant_id: 6,
-        name: 'Noodle Bar',
-        address: '987 Cedar Ln, Staten Island, NY',
-        phone: '555-2345',
-        logo_url:
-          'https://via.placeholder.com/150x150/FEE440/FFFFFF?text=Noodle',
-        rating: 4.2,
-        cuisine: 'Asian',
-        delivery_time: '20-30 min',
-        price_range: '$',
-        created_at: new Date(),
-        updated_at: new Date(),
-        menuItems: [
-          {
-            menu_item_id: 6,
-            name: 'Pad Thai',
-            price: 13.99,
-            image_url:
-              'https://via.placeholder.com/100x100/9B5DE5/FFFFFF?text=Noodle',
-          },
-        ],
-        menuCategories: [
-          {
-            category_id: 6,
-            name: 'Noodles',
           },
         ],
       },

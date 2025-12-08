@@ -296,7 +296,7 @@ export class OrderService {
     await this.orderRepository.softDelete(id);
   }
 
-  // ==================== FILTERING & QUERYING ====================
+  //FILTERING & QUERYING 
 
   async findWithFilters(query: OrderQueryDto) {
     const {

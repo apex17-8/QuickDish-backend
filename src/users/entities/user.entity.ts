@@ -11,6 +11,7 @@ import { RestaurantStaff } from '../../restaurant_staff/entities/restaurant_staf
 import { Order } from '../../orders/entities/order.entity';
 import { Rider } from '../../riders/entities/rider.entity';
 import { Customer } from '../../customers/entities/customer.entity';
+import { RiderRequest } from '../../rider-request/entities/rider-request.entity';
 
 export enum UserRole {
   SuperAdmin = 'super_admin',
@@ -75,4 +76,6 @@ export class User {
 
   @OneToMany(() => Customer, (customer) => customer.user)
   customers: Customer[];
+  @OneToMany(() => RiderRequest, (riderRequest) => riderRequest.rider)
+  riderRequests: RiderRequest[];
 }
