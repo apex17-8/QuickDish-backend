@@ -1,7 +1,7 @@
 import { Body, Controller, Post, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Public } from './decorators/public.decorator';
-import { CreateAuthDto } from './dto/signup.dto';
+import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/signin.dto';
 import { RtGuard } from './guards/refresh-token.guard';
 
@@ -11,7 +11,7 @@ export class AuthController {
 
   @Public()
   @Post('signup')
-  signUp(@Body() createAuthDto: CreateAuthDto) {
+  signUp(@Body() createAuthDto: SignupDto) {
     return this.authService.SignUp(createAuthDto);
   }
 

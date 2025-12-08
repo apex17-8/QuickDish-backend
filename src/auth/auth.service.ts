@@ -13,7 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../users/entities/user.entity';
 import { Repository } from 'typeorm';
-import { CreateAuthDto } from './dto/signup.dto';
+import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/signin.dto';
 import * as bcrypt from 'bcrypt';
 import { UserRole } from '../users/entities/user.entity';
@@ -132,51 +132,47 @@ export class AuthService {
   }
 
   // ------------------ SignUp ------------------
-  async SignUp(createAuthDto: CreateAuthDto) {
-    this.logger.log(`Signup attempt for email: ${createAuthDto.email}`);
+  async SignUp(signupDto: SignupDto) {
+    this.logger.log(`Signup attempt for email: ${signupDto.email}`);
 
     try {
       // Log incoming data for debugging
-      this.logger.debug(
-        `📥 Signup DTO received: ${JSON.stringify(createAuthDto)}`,
-      );
+      this.logger.debug(`📥 Signup DTO received:`, signupDto);
 
       // Validate and clean phone number
-      const validatedPhone = this.validatePhone(createAuthDto.phone);
+      const validatedPhone = this.validatePhone(signupDto.phone);
       this.logger.debug(`📱 Validated phone: ${validatedPhone}`);
 
       // Check if user already exists
       const existingUser = await this.userRepository.findOne({
-        where: { email: createAuthDto.email },
+        where: { email: signupDto.email },
       });
 
       if (existingUser) {
         this.logger.warn(
-          `Signup failed: User already exists with email ${createAuthDto.email}`,
+          `Signup failed: User already exists with email ${signupDto.email}`,
         );
         throw new ConflictException('User with this email already exists');
       }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(createAuthDto.password, 10);
+      // Hash password - FIXED THIS LINE!
+      const hashedPassword = await bcrypt.hash(signupDto.password, 10);
 
       // Prepare user data
       const userData = {
-        name: createAuthDto.name.trim(),
-        email: createAuthDto.email.toLowerCase().trim(),
+        name: signupDto.name.trim(),
+        email: signupDto.email.toLowerCase().trim(),
         password: hashedPassword,
         phone: validatedPhone,
-        role: createAuthDto.role || UserRole.Customer,
+        role: signupDto.role || UserRole.Customer,
         is_active: true,
         hashedRefreshedToken: '', // Will be set after token generation
       };
 
-      this.logger.debug(
-        `🔧 Creating user with data: ${JSON.stringify({
-          ...userData,
-          password: '[HASHED]',
-        })}`,
-      );
+      this.logger.debug(`🔧 Creating user with data:`, {
+        ...userData,
+        password: '[HASHED]',
+      });
 
       // Create and save user
       const user = this.userRepository.create(userData);
@@ -219,6 +215,7 @@ export class AuthService {
       };
     } catch (error) {
       this.logger.error(`❌ Signup failed: ${error.message}`, error.stack);
+      this.logger.error(`❌ Error details:`, error);
 
       // Re-throw known exceptions
       if (
@@ -234,8 +231,9 @@ export class AuthService {
         error.message &&
         error.message.includes('Cannot insert the value NULL')
       ) {
+        this.logger.error('❌ Database error: NULL insertion attempt');
         throw new BadRequestException(
-          'Missing required fields. Please check your input data.',
+          'Missing required fields. Phone number is required.',
         );
       }
 
