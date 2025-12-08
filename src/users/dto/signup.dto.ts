@@ -1,12 +1,12 @@
 //src/auth/dto/signup.dto.ts
-import { 
-  IsString, 
-  IsEmail, 
-  IsNotEmpty, 
-  MinLength, 
-  IsOptional, 
+import {
+  IsString,
+  IsEmail,
+  IsNotEmpty,
+  MinLength,
+  IsOptional,
   IsEnum,
-  Matches 
+  Matches,
 } from 'class-validator';
 import { UserRole } from '../entities/user.entity';
 
@@ -24,8 +24,9 @@ export class SignupDto {
 
   @IsString()
   @IsNotEmpty({ message: 'Phone number is required' })
-  @Matches(/^\+?[\d\s\-()]{10,}$/, { 
-    message: 'Please provide a valid phone number (e.g., +254700000000 or 0700000000)' 
+  @Matches(/^\+?[\d\s\-()]{10,}$/, {
+    message:
+      'Please provide a valid phone number (e.g., +254700000000 or 0700000000)',
   })
   phone: string;
 

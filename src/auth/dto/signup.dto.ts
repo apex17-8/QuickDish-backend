@@ -1,30 +1,36 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { UserRole } from 'src/users/entities/user.entity';
+//src/auth/dto/signup.dto.ts
+import {
+  IsString,
+  IsEmail,
+  IsNotEmpty,
+  MinLength,
+  IsOptional,
+  IsEnum,
+  Matches,
+} from 'class-validator';
+import { UserRole } from '../entities/user.entity';
 
-export class CreateAuthDto {
-  @ApiProperty({ example: 'user@example.com' })
-  @IsNotEmpty()
-  @IsEmail()
-  email: string;
-
-  @ApiProperty({ example: 'password123' })
-  @IsNotEmpty()
+export class SignupDto {
   @IsString()
-  password: string;
-
-  @ApiProperty({ example: 'admin' })
-  @IsNotEmpty()
-  @IsString()
-  role: UserRole;
-
-  @ApiProperty({ example: 'Tiffany Nyawira' })
-  @IsNotEmpty()
-  @IsString()
+  @IsNotEmpty({ message: 'Name is required' })
   name: string;
 
-  @ApiProperty({ example: '+1234567890', required: false })
-  @IsOptional()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  email: string;
+
   @IsString()
-  phone_number?: string;
+  @MinLength(6, { message: 'Password must be at least 6 characters' })
+  password: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'Phone number is required' })
+  @Matches(/^\+?[\d\s\-()]{10,}$/, {
+    message:
+      'Please provide a valid phone number (e.g., +254700000000 or 0700000000)',
+  })
+  phone: string;
+
+  @IsOptional()
+  @IsEnum(UserRole, { message: 'Invalid role selected' })
+  role?: UserRole = UserRole.Customer;
 }

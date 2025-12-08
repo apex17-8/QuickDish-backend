@@ -1,12 +1,12 @@
 //src/users/dto/create-user.dto.ts
-import { 
-  IsString, 
-  IsEmail, 
-  IsNotEmpty, 
-  MinLength, 
-  IsOptional, 
+import {
+  IsString,
+  IsEmail,
+  IsNotEmpty,
+  MinLength,
+  IsOptional,
   IsEnum,
-  Matches 
+  Matches,
 } from 'class-validator';
 import { UserRole } from '../entities/user.entity';
 
@@ -24,8 +24,8 @@ export class CreateUserDto {
 
   @IsString()
   @IsNotEmpty({ message: 'Phone number is required' })
-  @Matches(/^\+?[\d\s\-()]{10,}$/, { 
-    message: 'Please provide a valid phone number' 
+  @Matches(/^\+?[\d\s\-()]{10,}$/, {
+    message: 'Please provide a valid phone number',
   })
   phone: string;
 
