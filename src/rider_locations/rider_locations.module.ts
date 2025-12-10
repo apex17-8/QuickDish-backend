@@ -6,9 +6,13 @@ import { Rider } from '../riders/entities/rider.entity';
 import { Restaurant } from '../restaurants/entities/restaurant.entity';
 import { RiderLocationService } from './rider_locations.service';
 import { RiderLocationController } from './rider_locations.controller';
+import { UsersModule } from '../users/users.module'; // Add this import
 
 @Module({
-  imports: [TypeOrmModule.forFeature([RiderLocation, Rider, Restaurant])],
+  imports: [
+    TypeOrmModule.forFeature([RiderLocation, Rider, Restaurant]),
+    UsersModule, // Add this line - this makes UserRepository available
+  ],
   providers: [RiderLocationService],
   controllers: [RiderLocationController],
   exports: [RiderLocationService],
