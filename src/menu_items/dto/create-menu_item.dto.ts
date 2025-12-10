@@ -14,8 +14,8 @@ export class CreateMenuItemDto {
   description?: string;
 
   @IsInt()
-  restaurantId: number;
+  restaurant_Id: number;
 
   @IsInt()
-  categoryId: number;
+  category_Id: number;
 }

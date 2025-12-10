@@ -1,6 +1,7 @@
 import { IsInt, IsPositive, IsOptional, IsString } from 'class-validator';
 
 export class CreateOrderItemDto {
+  @IsOptional()
   @IsInt()
   @IsPositive()
   order_id: number;

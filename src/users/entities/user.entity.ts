@@ -12,6 +12,7 @@ import { Order } from '../../orders/entities/order.entity';
 import { Rider } from '../../riders/entities/rider.entity';
 import { Customer } from '../../customers/entities/customer.entity';
 import { RiderRequest } from '../../rider-request/entities/rider-request.entity';
+import { Message } from '../../messages/entities/message.entity';
 
 export enum UserRole {
   SuperAdmin = 'super_admin',
@@ -78,4 +79,6 @@ export class User {
   customers: Customer[];
   @OneToMany(() => RiderRequest, (riderRequest) => riderRequest.rider)
   riderRequests: RiderRequest[];
+  @OneToMany(() => Message, (msg) => msg.sender)
+  messages: Message[];
 }

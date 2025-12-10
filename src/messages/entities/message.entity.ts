@@ -26,12 +26,11 @@ export class Message {
   @JoinColumn({ name: 'sender_id' })
   sender: User;
 
+  @ManyToOne(() => Order, (order) => order.messages)
   @Column({ type: 'text' })
   content: string;
 
-  /**
-   * Whether the receiving user has opened/read the message.
-   */
+  //Whether the receiving user has opened/read the message.
   @Column({ type: 'bit', default: false })
   is_read: boolean;
 

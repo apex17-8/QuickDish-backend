@@ -45,7 +45,7 @@ export class Order {
   // BASE ORDER FIELDS
   // -----------------------------
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-  @Transform(({ value }) => parseFloat(value) || 0)
+  @Transform(({ value }: { value: string }) => parseFloat(value) || 0)
   total_price: number;
 
   @Column({ type: 'varchar', length: 30, default: OrderStatus.Pending })
@@ -61,7 +61,7 @@ export class Order {
   // PAYMENT FIELDS
   // -----------------------------
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-  @Transform(({ value }) => parseFloat(value) || 0)
+  @Transform(({ value }: { value: string }) => parseFloat(value) || 0)
   amount_paid: number;
 
   // Store enum as string for MSSQL compatibility

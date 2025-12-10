@@ -1,7 +1,7 @@
 // src/restaurant_staff/restaurant-staff.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { RestaurantStaff } from './entities/restaurant_staff.entity';
 import { CreateRestaurantStaffDto } from './dto/create-restaurant_staff.dto';
 import { UpdateRestaurantStaffDto } from './dto/update-restaurant_staff.dto';
@@ -22,7 +22,7 @@ export class RestaurantStaffService {
 
   async findOne(id: number): Promise<RestaurantStaff> {
     const staff = await this.staffRepository.findOne({
-      where: { restaurant_stuff_id: id },
+      where: { restaurant_staff_id: id } as FindOptionsWhere<RestaurantStaff>,
       relations: ['restaurant'],
     });
     if (!staff) throw new NotFoundException(`Staff ${id} not found`);
@@ -49,8 +49,8 @@ export class RestaurantStaffService {
     return this.staffRepository.save(staff);
   }
 
-  async remove(id: number): Promise<void> {
-    const staff = await this.findOne(id);
+  async remove(restaurant_staff_id: number): Promise<void> {
+    const staff = await this.findOne(restaurant_staff_id);
     await this.staffRepository.remove(staff);
   }
 }

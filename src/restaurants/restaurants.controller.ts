@@ -9,7 +9,12 @@ import {
   Delete,
   UseGuards,
   Req,
+  ParseIntPipe,
+  Query,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { RestaurantService } from './restaurants.service';
 import { Restaurant } from './entities/restaurant.entity';
 import { MenuItem } from '../menu_items/entities/menu_item.entity';
@@ -37,13 +42,30 @@ export class RestaurantController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: number): Promise<Restaurant> {
+  findOne(@Param('id', ParseIntPipe) id: number): Promise<Restaurant> {
     return this.restaurantService.findOne(id);
+  }
+
+  @Get(':id/menu')
+  async getRestaurantMenu(@Param('id', ParseIntPipe) id: number) {
+    return this.restaurantService.getRestaurantMenu(id);
+  }
+
+  @Get(':id/ratings')
+  async getRestaurantRatings(@Param('id', ParseIntPipe) id: number) {
+    return this.restaurantService.getRestaurantRatings(id);
+  }
+
+  @Get('search/:query')
+  async searchRestaurants(
+    @Param('query') query: string,
+  ): Promise<Restaurant[]> {
+    return this.restaurantService.searchRestaurants(query);
   }
 
   // ========== RESTAURANT OWNER ENDPOINTS ==========
 
-  // 1. Create Restaurant (Owner Only)
+  // 1. Create Restaurant
   @UseGuards(AtGuard, RolesGuard)
   @Roles(UserRole.RestaurantOwner, UserRole.SuperAdmin)
   @Post()
@@ -58,41 +80,43 @@ export class RestaurantController {
     );
   }
 
-  // 2. Get My Restaurants (Owner's restaurants)
+  // 2. Get Restaurants Owned/Managed by User
   @UseGuards(AtGuard, RolesGuard)
   @Roles(UserRole.RestaurantOwner, UserRole.Manager, UserRole.SuperAdmin)
   @Get('owner/my-restaurants')
   async getMyRestaurants(@Req() req): Promise<Restaurant[]> {
-    const userId = req.user.sub;
+    const user_id = req.user.sub;
     const userRole = req.user.role;
-    return this.restaurantService.findByOwnerOrManager(userId, userRole);
+
+    return this.restaurantService.findByOwnerOrManager(user_id, userRole);
   }
 
-  // 3. Update My Restaurant (Owner/Manager)
+  // 3. Update Restaurant
   @UseGuards(AtGuard, RolesGuard)
   @Roles(UserRole.RestaurantOwner, UserRole.Manager, UserRole.SuperAdmin)
   @Patch(':id')
   async updateMyRestaurant(
-    @Param('id') id: number,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updateRestaurantDto: UpdateRestaurantDto,
     @Req() req,
   ): Promise<Restaurant> {
-    const userId = req.user.sub;
+    const user_id = req.user.sub;
     const userRole = req.user.role;
+
     return this.restaurantService.updateRestaurant(
       id,
-      userId,
+      user_id,
       userRole,
       updateRestaurantDto,
     );
   }
 
-  // 4. Delete My Restaurant (Owner Only)
+  // 4. Delete Restaurant
   @UseGuards(AtGuard, RolesGuard)
   @Roles(UserRole.RestaurantOwner, UserRole.SuperAdmin)
   @Delete(':id')
   async deleteRestaurant(
-    @Param('id') id: number,
+    @Param('id', ParseIntPipe) id: number,
     @Req() req,
   ): Promise<{ message: string }> {
     const ownerId = req.user.sub;
@@ -100,36 +124,99 @@ export class RestaurantController {
     return { message: 'Restaurant deleted successfully' };
   }
 
-  // 5. Add Menu Item (Owner/Manager)
+  // 5. Add Menu Item
   @UseGuards(AtGuard, RolesGuard)
   @Roles(UserRole.RestaurantOwner, UserRole.Manager, UserRole.SuperAdmin)
   @Post(':id/menu-items')
   async addMenuItem(
-    @Param('id') id: number,
+    @Param('id', ParseIntPipe) id: number,
     @Body() menuItem: Partial<MenuItem>,
     @Req() req,
   ): Promise<MenuItem> {
-    const userId = req.user.sub;
+    const user_id = req.user.sub;
     const userRole = req.user.role;
-    return this.restaurantService.addMenuItem(id, userId, userRole, menuItem);
+
+    return this.restaurantService.addMenuItem(id, user_id, userRole, menuItem);
   }
 
-  // 6. Update Category (Owner/Manager)
+  // 6. Update Menu Category
   @UseGuards(AtGuard, RolesGuard)
   @Roles(UserRole.RestaurantOwner, UserRole.Manager, UserRole.SuperAdmin)
   @Patch('categories/:categoryId')
   async updateCategory(
-    @Param('categoryId') categoryId: number,
+    @Param('categoryId', ParseIntPipe) categoryId: number,
     @Body() updateData: Partial<RestaurantMenuCategory>,
     @Req() req,
   ): Promise<RestaurantMenuCategory> {
-    const userId = req.user.sub;
+    const user_id = req.user.sub;
     const userRole = req.user.role;
+
     return this.restaurantService.updateCategory(
       categoryId,
-      userId,
+      user_id,
       userRole,
       updateData,
+    );
+  }
+
+  // 7. Upload Restaurant Image
+  @UseGuards(AtGuard, RolesGuard)
+  @Roles(UserRole.RestaurantOwner, UserRole.Manager, UserRole.SuperAdmin)
+  @Post(':id/upload-image')
+  @UseInterceptors(FileInterceptor('image'))
+  async uploadImage(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req,
+  ): Promise<Restaurant> {
+    const user_id = req.user.sub;
+    const userRole = req.user.role;
+
+    return this.restaurantService.uploadRestaurantImage(
+      id,
+      user_id,
+      userRole,
+      file,
+    );
+  }
+
+  // 8. Update Restaurant Status
+  @UseGuards(AtGuard, RolesGuard)
+  @Roles(UserRole.RestaurantOwner, UserRole.Manager, UserRole.SuperAdmin)
+  @Patch(':id/status')
+  async updateStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { is_active: boolean },
+    @Req() req,
+  ): Promise<Restaurant> {
+    const user_id = req.user.sub;
+    const userRole = req.user.role;
+
+    return this.restaurantService.updateRestaurantStatus(
+      id,
+      user_id,
+      userRole,
+      body.is_active,
+    );
+  }
+
+  // 9. Get Restaurant Statistics
+  @UseGuards(AtGuard, RolesGuard)
+  @Roles(UserRole.RestaurantOwner, UserRole.Manager, UserRole.SuperAdmin)
+  @Get(':id/statistics')
+  async getStatistics(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('period') period: string = 'month',
+    @Req() req,
+  ) {
+    const user_id = req.user.sub;
+    const userRole = req.user.role;
+
+    return this.restaurantService.getRestaurantStatistics(
+      id,
+      user_id,
+      userRole,
+      period,
     );
   }
 }

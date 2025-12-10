@@ -1,3 +1,4 @@
+// src/restaurants/entities/restaurant.entity.ts - ADD THESE FIELDS
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -49,6 +50,13 @@ export class Restaurant {
 
   @Column({ type: 'text', nullable: true })
   description: string;
+
+  // ADD THESE FIELDS FOR LOCATION
+  @Column({ type: 'float', nullable: true })
+  latitude: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  longitude: number | null;
 
   @Column({ type: 'bit', default: 1 }) // 1 = true, 0 = false
   is_active: boolean;

@@ -24,9 +24,8 @@ export class OrderItemsService {
     private readonly restaurantRepository: Repository<Restaurant>,
   ) {}
 
-  /**
-   * Create a new order item
-   */
+  //Create a new order item
+
   async create(createOrderItemDto: CreateOrderItemDto): Promise<OrderItem> {
     // Verify order exists
     const order = await this.orderRepository.findOne({
@@ -71,18 +70,16 @@ export class OrderItemsService {
     return savedItem;
   }
 
-  /**
-   * Get all order items
-   */
+  // Get all order items
+
   async findAll(): Promise<OrderItem[]> {
     return this.orderItemRepository.find({
       relations: ['menu_item', 'order'],
     });
   }
 
-  /**
-   * Get order items for a specific order
-   */
+  // Get order items for a specific order
+
   async findByOrder(orderId: number): Promise<OrderItem[]> {
     return this.orderItemRepository.find({
       where: { order: { order_id: orderId } },
@@ -91,9 +88,8 @@ export class OrderItemsService {
     });
   }
 
-  /**
-   * Get a single order item
-   */
+  // Get a single order item
+
   async findOne(id: number): Promise<OrderItem> {
     const orderItem = await this.orderItemRepository.findOne({
       where: { order_item_id: id },
@@ -107,9 +103,8 @@ export class OrderItemsService {
     return orderItem;
   }
 
-  /**
-   * Update an order item
-   */
+  //Update an order item
+
   async update(
     id: number,
     updateOrderItemDto: UpdateOrderItemDto,
@@ -134,9 +129,8 @@ export class OrderItemsService {
     return updatedItem;
   }
 
-  /**
-   * Remove an order item
-   */
+  //Remove an order item
+
   async remove(id: number): Promise<void> {
     const orderItem = await this.findOne(id);
     const orderId = orderItem.order.order_id;
@@ -147,9 +141,8 @@ export class OrderItemsService {
     await this.updateOrderTotal(orderId);
   }
 
-  /**
-   * Bulk create order items for an order
-   */
+  // Bulk create order items for an order
+
   async createBulk(
     orderId: number,
     items: CreateOrderItemDto[],
@@ -198,13 +191,12 @@ export class OrderItemsService {
     return savedItems;
   }
 
-  /**
-   * Update order total based on order items
-   */
+  // Update order total based on order items
+
   private async updateOrderTotal(orderId: number): Promise<void> {
     const orderItems = await this.findByOrder(orderId);
     const total = orderItems.reduce(
-      (sum, item) => sum + item.price_at_purchase * item.quantity,
+      (sum, item) => sum + Number(item.price_at_purchase) * item.quantity,
       0,
     );
 
@@ -213,9 +205,8 @@ export class OrderItemsService {
     });
   }
 
-  /**
-   * Get order summary with item details
-   */
+  //Get order summary with item details
+
   async getOrderSummary(orderId: number): Promise<{
     items: OrderItem[];
     subtotal: number;

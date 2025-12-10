@@ -1,12 +1,14 @@
+// src/rider_locations/rider_locations.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RiderLocation } from './entities/rider_location.entity';
 import { Rider } from '../riders/entities/rider.entity';
+import { Restaurant } from '../restaurants/entities/restaurant.entity';
 import { RiderLocationService } from './rider_locations.service';
 import { RiderLocationController } from './rider_locations.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([RiderLocation, Rider])],
+  imports: [TypeOrmModule.forFeature([RiderLocation, Rider, Restaurant])],
   providers: [RiderLocationService],
   controllers: [RiderLocationController],
   exports: [RiderLocationService],

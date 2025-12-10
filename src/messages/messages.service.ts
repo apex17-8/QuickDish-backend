@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Message } from './entities/message.entity';
 import { Repository, Not } from 'typeorm';
@@ -10,9 +10,8 @@ export class MessagesService {
     private readonly messageRepository: Repository<Message>,
   ) {}
 
-  /**
-   * Send message
-   */
+  // Send message
+
   async createMessage(
     orderId: number,
     senderId: number,
@@ -30,9 +29,8 @@ export class MessagesService {
     return this.messageRepository.save(message);
   }
 
-  /**
-   * Get chat history for an order
-   */
+  //Get chat history for an order
+
   async getMessagesForOrder(orderId: number) {
     return this.messageRepository.find({
       where: { order: { order_id: orderId } },
@@ -41,34 +39,31 @@ export class MessagesService {
     });
   }
 
-  /**
-   * Soft delete all messages in an order
-   */
+  //Soft delete all messages in an order
+
   async deleteMessagesForOrder(orderId: number) {
     return this.messageRepository.softDelete({
       order: { order_id: orderId },
     });
   }
 
-  /**
-   * Mark all messages in an order as read by a user
-   */
+  //Mark all messages in an order as read by a user
+
   async markMessagesAsRead(orderId: number, userId: number) {
-    await this.messageRepository.update(
+    const result = await this.messageRepository.update(
       {
         order: { order_id: orderId },
-        sender: { user_id: Not(userId) }, // only messages NOT sent by this user
+        sender: { user_id: Not(userId) },
         is_read: false,
       },
-      {
-        is_read: true,
-      },
+      { is_read: true },
     );
+
+    return { updated: result.affected };
   }
 
-  /**
-   * Get unread count for a user in an order
-   */
+  //Get unread count for a user in an order
+
   async getUnreadCount(orderId: number, userId: number): Promise<number> {
     return this.messageRepository.count({
       where: {
@@ -79,9 +74,8 @@ export class MessagesService {
     });
   }
 
-  /**
-   * Get last message for an order
-   */
+  //Get last message for an order
+
   async getLastMessage(orderId: number) {
     return this.messageRepository.findOne({
       where: { order: { order_id: orderId } },

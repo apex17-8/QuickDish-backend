@@ -8,15 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  Repository,
-  Between,
-  LessThan,
-  MoreThan,
-  In,
-  IsNull,
-  Not,
-} from 'typeorm';
+import { Repository, Between, LessThan, MoreThan, In, IsNull } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Order, OrderStatus, PaymentStatus } from './entities/order.entity';
 import { OrderItem } from '../order_items/entities/order_item.entity';
@@ -25,11 +17,29 @@ import { Rider } from '../riders/entities/rider.entity';
 import { Restaurant } from '../restaurants/entities/restaurant.entity';
 import { MenuItem } from '../menu_items/entities/menu_item.entity';
 import { OrderStatusLog } from '../order-status-logs/entities/order-status-log.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { OrderQueryDto } from './dto/order-query.dto';
 import { PaymentsService } from '../payments/payments.service';
+import { OrderStatusLogsService } from '../order-status-logs/order_status_logs.service';
+
+// Add missing interface for payment data
+interface CreateOrderWithPaymentDto {
+  customer_id: number;
+  restaurant_id: number;
+  delivery_address: string;
+  notes?: string;
+  delivery_latitude?: number;
+  delivery_longitude?: number;
+  email: string;
+  callback_url?: string;
+  items: Array<{
+    menu_item_id: number;
+    quantity: number;
+    special_instructions?: string;
+  }>;
+}
 
 @Injectable()
 export class OrderService {
@@ -62,6 +72,8 @@ export class OrderService {
 
     @Inject(forwardRef(() => PaymentsService))
     private paymentsService: PaymentsService,
+    @Inject(forwardRef(() => OrderStatusLogsService))
+    private orderStatusLogsService: OrderStatusLogsService,
 
     private eventEmitter: EventEmitter2,
   ) {}
@@ -149,15 +161,23 @@ export class OrderService {
     // Calculate and update total
     await this.calculateTotal(savedOrder.order_id);
 
-    // Log status change
-    await this.logStatusChange(
-      savedOrder.order_id,
-      null,
-      OrderStatus.Pending,
-      'Order created',
-      customer.user?.user_id,
-    );
-
+    // Log status change - FIXED: Now compatible with nullable from_status
+    try {
+      await this.orderStatusLogsService.create({
+        order_id: savedOrder.order_id,
+        from_status: null, // This is now allowed since from_status is nullable
+        to_status: OrderStatus.Pending,
+        changed_by_user_id: customer.user?.user_id,
+        changed_by_role: UserRole.Customer,
+        notes: 'Order created',
+      });
+    } catch (error) {
+      console.error('Failed to log order status change:', error);
+      // Don't throw error here as order creation should still succeed
+      // Log the error for monitoring
+      this.logger.error(`Failed to create status log for order ${savedOrder.order_id}:`, error);
+    }
+    
     // Emit order created event
     this.eventEmitter.emit('order.created', {
       orderId: savedOrder.order_id,
@@ -170,7 +190,7 @@ export class OrderService {
     return this.findOrderWithDetails(savedOrder.order_id);
   }
 
-  async createOrderWithPayment(data: any) {
+  async createOrderWithPayment(data: CreateOrderWithPaymentDto) {
     try {
       // First, create the order
       const order = await this.createOrderWithItems({
@@ -296,7 +316,7 @@ export class OrderService {
     await this.orderRepository.softDelete(id);
   }
 
-  //FILTERING & QUERYING 
+  // ==================== FILTERING & QUERYING ====================
 
   async findWithFilters(query: OrderQueryDto) {
     const {
@@ -439,15 +459,15 @@ export class OrderService {
       orderId,
       previousStatus,
       OrderStatus.OnRoute,
-      `Rider ${rider.user.name} assigned`,
-      rider.user.user_id,
+      `Rider ${rider.user?.name || 'Unknown'} assigned`,
+      rider.user?.user_id,
     );
 
     // Emit events
     this.eventEmitter.emit('order.rider.assigned', {
       orderId,
       riderId,
-      riderName: rider.user.name,
+      riderName: rider.user?.name || 'Unknown',
       timestamp: new Date(),
     });
 
@@ -1120,7 +1140,7 @@ export class OrderService {
 
     if (filters?.status) {
       searchQuery.andWhere('order.status = :status', {
-        status: filters.status,
+        status: filters.status as OrderStatus,
       });
     }
 
@@ -1270,7 +1290,7 @@ export class OrderService {
         todayOrders,
         pendingOrders,
         activeRiders,
-        totalRevenue: totalRevenue?.revenue || 0,
+        totalRevenue: (totalRevenue?.revenue as number) || 0,
       },
       topRestaurants,
       recentActivity: await this.getRecentActivity(),
@@ -1282,6 +1302,147 @@ export class OrderService {
       relations: ['customer.user', 'restaurant', 'rider.user'],
       order: { created_at: 'DESC' },
       take: 10,
+    });
+  }
+
+  // ==================== NEW METHODS FOR BETTER FUNCTIONALITY ====================
+
+  async getOrderTimeline(orderId: number) {
+    const order = await this.findOrderWithDetails(orderId);
+    const logs = await this.orderStatusLogsService.findByOrderId(orderId);
+
+    return {
+      order: {
+        id: order.order_id,
+        status: order.status,
+        createdAt: order.created_at,
+        estimatedDeliveryTime: order.estimated_delivery_time,
+      },
+      timeline: logs.map(log => ({
+        id: log.id,
+        fromStatus: log.from_status,
+        toStatus: log.to_status,
+        changedBy: log.changed_by?.name || 'System',
+        changedByRole: log.changed_by_role,
+        notes: log.notes,
+        changedAt: log.changed_at,
+      })),
+      currentStatus: {
+        canBeCancelled: order.can_be_cancelled,
+        canConfirmDelivery: order.can_confirm_delivery,
+        assignmentExpired: order.assignment_expired,
+      }
+    };
+  }
+
+  async getOrderSummary(orderId: number) {
+    const order = await this.findOrderWithDetails(orderId);
+    
+    return {
+      orderId: order.order_id,
+      customer: {
+        id: order.customer.customer_id,
+        name: order.customer.user?.name,
+        email: order.customer.user?.email,
+        phone: order.customer.user?.phone,
+      },
+      restaurant: {
+        id: order.restaurant.restaurant_id,
+        name: order.restaurant.name,
+        address: order.restaurant.address,
+        phone: order.restaurant.phone,
+      },
+      rider: order.rider ? {
+        id: order.rider.rider_id,
+        name: order.rider.user?.name,
+        phone: order.rider.user?.phone,
+        isOnline: order.rider.is_online,
+      } : null,
+      items: order.orderItems.map(item => ({
+        name: item.menu_item?.name,
+        quantity: item.quantity,
+        price: item.price_at_purchase,
+        specialInstructions: item.special_instructions,
+        subtotal: item.price_at_purchase * item.quantity,
+      })),
+      totals: {
+        subtotal: order.total_price,
+        deliveryFee: 0, // You can add delivery fee logic
+        tax: 0, // You can add tax calculation
+        total: order.total_price,
+      },
+      status: {
+        current: order.status,
+        payment: order.payment_status,
+        customerConfirmed: order.customer_confirmed,
+        riderConfirmed: order.rider_confirmed,
+      },
+      timestamps: {
+        created: order.created_at,
+        accepted: order.accepted_at,
+        pickedUp: order.picked_up_at,
+        assigned: order.assigned_at,
+        updated: order.updated_at,
+      }
+    };
+  }
+
+  async resendOrderNotification(orderId: number, notificationType: string) {
+    const order = await this.findOne(orderId);
+    
+    switch (notificationType) {
+      case 'restaurant':
+        this.eventEmitter.emit('order.notification.restaurant', {
+          orderId,
+          restaurantId: order.restaurant.restaurant_id,
+          status: order.status,
+          timestamp: new Date(),
+        });
+        break;
+      case 'rider':
+        if (order.rider) {
+          this.eventEmitter.emit('order.notification.rider', {
+            orderId,
+            riderId: order.rider.rider_id,
+            status: order.status,
+            timestamp: new Date(),
+          });
+        }
+        break;
+      case 'customer':
+        this.eventEmitter.emit('order.notification.customer', {
+          orderId,
+          customerId: order.customer.customer_id,
+          status: order.status,
+          timestamp: new Date(),
+        });
+        break;
+      default:
+        throw new BadRequestException('Invalid notification type');
+    }
+
+    return { message: `Notification sent for order ${orderId}` };
+  }
+
+  async getOrdersByDate(date: Date, restaurantId?: number): Promise<Order[]> {
+    const startDate = new Date(date);
+    startDate.setHours(0, 0, 0, 0);
+    
+    const endDate = new Date(date);
+    endDate.setHours(23, 59, 59, 999);
+
+    const where: any = {
+      created_at: Between(startDate, endDate),
+    };
+
+    if (restaurantId) {
+      where.restaurant = { restaurant_id: restaurantId };
+    }
+
+    return this.orderRepository.find({
+      where,
+      relations: ['customer.user', 'restaurant', 'rider.user'],
+      order: { created_at: 'DESC' },
     });
   }
 }

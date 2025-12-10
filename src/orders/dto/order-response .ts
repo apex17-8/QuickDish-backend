@@ -19,7 +19,7 @@ export class OrderResponseDto {
   delivery_longitude?: number;
   created_at: Date;
   updated_at: Date;
-  
+
   // Relationships
   customer: {
     customer_id: number;
@@ -28,14 +28,14 @@ export class OrderResponseDto {
       phone: string;
     };
   };
-  
+
   restaurant: {
     restaurant_id: number;
     name: string;
     address: string;
     phone: string;
   };
-  
+
   rider?: {
     rider_id: number;
     user: {
@@ -45,7 +45,7 @@ export class OrderResponseDto {
     vehicle_type: string;
     rating: number;
   };
-  
+
   orderItems?: Array<{
     order_item_id: number;
     quantity: number;
@@ -57,7 +57,7 @@ export class OrderResponseDto {
       price: number;
     };
   }>;
-  
+
   // Virtual properties
   calculated_total: number;
   can_be_cancelled: boolean;

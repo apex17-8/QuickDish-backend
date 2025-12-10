@@ -10,7 +10,7 @@ import {
 import { RestaurantMenuCategoriesService } from './restaurant-menu_categories.service';
 import { CreateRestaurantMenuCategoryDto } from './dto/create-restaurant-menu_category.dto';
 import { UpdateRestaurantMenuCategoryDto } from './dto/update-restaurant-menu_category.dto';
-
+import { AssignMenuItemDto } from './dto/assign-menu-item.dto';
 @Controller('restaurant-menu-categories')
 export class RestaurantMenuCategoriesController {
   constructor(
@@ -50,5 +50,15 @@ export class RestaurantMenuCategoriesController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.restaurantMenuCategoriesService.remove(+id);
+  }
+  @Post(':id/assign-menu-item')
+  assignMenuItem(
+    @Param('id') categoryId: string,
+    @Body() dto: AssignMenuItemDto,
+  ) {
+    return this.restaurantMenuCategoriesService.assignMenuItem(
+      +categoryId,
+      dto.menuItemId,
+    );
   }
 }

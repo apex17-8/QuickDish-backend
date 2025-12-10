@@ -1,4 +1,4 @@
-// src/menu_items/menu_items.service.ts - ADD THIS METHOD
+// src/menu_items/menu_items.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -25,15 +25,14 @@ export class MenuItemsService {
     });
   }
 
-  // 🔴 ADD THIS METHOD
   async findPopular(): Promise<MenuItem[]> {
     try {
       console.log('Finding popular menu items...');
 
-      // Try to get real data from database first
+      // get data from database first
       const existingItems = await this.menuItemRepository.find({
         take: 8,
-        order: { price: 'ASC' }, // Or use { menu_item_id: 'DESC' } for newest first
+        order: { price: 'ASC' }, // { menu_item_id: 'DESC' } for newest first
         relations: ['restaurant', 'category'],
       });
 
@@ -71,16 +70,16 @@ export class MenuItemsService {
 
   async create(dto: CreateMenuItemDto): Promise<MenuItem> {
     const restaurant = await this.restaurantRepository.findOneBy({
-      restaurant_id: dto.restaurantId,
+      restaurant_id: dto.restaurant_Id,
     });
     if (!restaurant)
-      throw new NotFoundException(`Restaurant ${dto.restaurantId} not found`);
+      throw new NotFoundException(`Restaurant ${dto.restaurant_Id} not found`);
 
     const category = await this.categoryRepository.findOneBy({
-      category_id: dto.categoryId,
+      category_id: dto.category_Id,
     });
     if (!category)
-      throw new NotFoundException(`Category ${dto.categoryId} not found`);
+      throw new NotFoundException(`Category ${dto.category_Id} not found`);
 
     const menuItem = this.menuItemRepository.create({
       name: dto.name,
@@ -104,10 +103,9 @@ export class MenuItemsService {
     await this.menuItemRepository.remove(menuItem);
   }
 
-  // 🔴 ADD THIS HELPER METHOD TO CREATE SAMPLE DATA
   private async createSampleMenuItems(): Promise<void> {
     try {
-      // First, check if we have restaurants and categories
+      //check there are restaurants and categories
       const restaurant = await this.restaurantRepository.findOne({
         where: { restaurant_id: 1 },
       });
@@ -121,7 +119,7 @@ export class MenuItemsService {
         return;
       }
 
-      // Create sample menu items
+      //sample menu items
       const sampleItems = [
         {
           name: 'Margherita Pizza',
@@ -183,7 +181,7 @@ export class MenuItemsService {
     }
   }
 
-  // 🔴 ADD THIS METHOD FOR MOCK DATA FALLBACK
+  // MOCK DATA FALLBACK
   private getMockPopularItems(): any[] {
     return [
       {

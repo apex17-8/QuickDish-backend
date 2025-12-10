@@ -22,7 +22,6 @@ export class MenuItemsController {
     return this.menuItemsService.findAll();
   }
 
-  // 🔴 ADD THIS METHOD - PUT IT BEFORE @Get(':id')
   @Get('popular')
   findPopular(): Promise<MenuItem[]> {
     console.log('📞 GET /api/menu-items/popular called');

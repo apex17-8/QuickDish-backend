@@ -23,7 +23,7 @@ export class AccessStrategy extends PassportStrategy(Strategy, 'access') {
    * validate() is called after the token is verified.
    * The returned object is attached to req.user
    */
-  async validate(payload: JWTPayload) {
+  validate(payload: JWTPayload) {
     return {
       user_id: payload.sub,
       email: payload.email,

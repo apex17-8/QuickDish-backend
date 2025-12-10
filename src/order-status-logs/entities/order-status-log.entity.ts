@@ -1,3 +1,4 @@
+// src/order-status-logs/entities/order-status-log.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -21,15 +22,15 @@ export class OrderStatusLog {
   @JoinColumn({ name: 'order_id' })
   order: Order;
 
-  @Column({ type: 'varchar', length: 50 })
-  from_status: OrderStatus;
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  from_status: OrderStatus | null;
 
   @Column({ type: 'varchar', length: 50 })
   to_status: OrderStatus;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'changed_by_user_id' })
-  changed_by: User;
+  changed_by: User | null;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   changed_by_role: string;

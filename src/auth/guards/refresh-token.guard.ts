@@ -8,6 +8,6 @@ import { AuthGuard } from '@nestjs/passport';
 @Injectable()
 export class RtGuard extends AuthGuard('refresh') {
   getRequest(context: ExecutionContext) {
-    return super.getRequest(context); // extract request for passport
+    return super.getRequest(context) as Request; // extract request for passport
   }
 }

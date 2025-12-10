@@ -16,6 +16,7 @@ import { OrderTrackingGateway } from '../websockets/gateways/order-tracking.gate
 import { OrderItemsModule } from '../order_items/order_items.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { OrderTrackingService } from '../websockets/services/order-tracking.service';
+import { OrderStatusLogsModule } from '../order-status-logs/order_status_logs.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { OrderTrackingService } from '../websockets/services/order-tracking.serv
     ]),
     OrderItemsModule,
     forwardRef(() => PaymentsModule),
+    OrderStatusLogsModule,
   ],
   providers: [
     OrderService,

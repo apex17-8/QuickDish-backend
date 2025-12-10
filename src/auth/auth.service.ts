@@ -155,14 +155,14 @@ export class AuthService {
         throw new ConflictException('User with this email already exists');
       }
 
-      // Hash password - FIXED THIS LINE!
+      // Hash password
       const hashedPassword = await bcrypt.hash(signupDto.password, 10);
 
       // Prepare user data
       const userData = {
         name: signupDto.name.trim(),
         email: signupDto.email.toLowerCase().trim(),
-        password: hashedPassword,
+        password: hashedPassword as string,
         phone: validatedPhone,
         role: signupDto.role || UserRole.Customer,
         is_active: true,
@@ -443,7 +443,14 @@ export class AuthService {
         user: profile,
       };
     } catch (error) {
-      this.logger.error(`Failed to get profile: ${error.message}`, error.stack);
+      if (error instanceof Error) {
+        this.logger.error(
+          `Failed to get profile: ${error.message}`,
+          error.stack,
+        );
+      } else {
+        this.logger.error('Failed to get profile: Unknown error');
+      }
 
       if (error instanceof NotFoundException) {
         throw error;
@@ -454,20 +461,20 @@ export class AuthService {
   }
 
   // ------------------ Validate Phone (Public Method) ------------------
-  async validatePhoneNumber(
+  validatePhoneNumber(
     phone: string,
   ): Promise<{ isValid: boolean; formatted: string }> {
     try {
       const formatted = this.validatePhone(phone);
-      return {
+      return Promise.resolve({
         isValid: true,
         formatted,
-      };
-    } catch (error) {
-      return {
+      });
+    } catch {
+      return Promise.resolve({
         isValid: false,
         formatted: phone,
-      };
+      });
     }
   }
 }

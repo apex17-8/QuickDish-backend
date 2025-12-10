@@ -24,7 +24,7 @@ export class AtGuard extends AuthGuard('access') {
     return super.canActivate(context); // validate access token
   }
 
-  getRequest(context: ExecutionContext) {
-    return super.getRequest(context); // extract request for passport
+  getRequest(context: ExecutionContext): Request {
+    return super.getRequest(context) as Request; // extract request for passport
   }
 }

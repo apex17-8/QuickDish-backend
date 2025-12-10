@@ -23,12 +23,12 @@ export class AuthController {
 
   @UseGuards(RtGuard)
   @Post('refresh')
-  refresh(@Req() req) {
+  refresh(@Req() req: { user: { sub: number; refreshToken: string } }) {
     return this.authService.refreshTokens(req.user.sub, req.user.refreshToken);
   }
 
   @Post('signout')
-  signOut(@Req() req) {
+  signOut(@Req() req: { user: { user_id: number } }) {
     return this.authService.SignOut(req.user.user_id);
   }
 }
