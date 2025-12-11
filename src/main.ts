@@ -40,6 +40,7 @@ async function bootstrap() {
       'X-Requested-With',
       'Accept',
       'Origin',
+      'Acess-Control-Allow-Origin',
       'Access-Control-Allow-Headers',
       'Access-Control-Request-Method',
       'Access-Control-Request-Headers',
