@@ -31,23 +31,22 @@ async function bootstrap() {
       : ['http://localhost:5173', 'http://localhost:3000'];
 
   app.enableCors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:3000',
-    'https://quickdish-frontend-2b6x.onrender.com'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Accept',
-    'Origin',
-    'X-Requested-With'
-  ],
-});
-
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:3000',
+      'https://quickdish-frontend-2b6x.onrender.com',
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Origin',
+      'X-Requested-With',
+    ],
+  });
 
   // Global prefix for all routes
   app.setGlobalPrefix('api');
