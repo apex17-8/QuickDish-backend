@@ -31,27 +31,23 @@ async function bootstrap() {
       : ['http://localhost:5173', 'http://localhost:3000'];
 
   app.enableCors({
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Requested-With',
-      'Accept',
-      'Origin',
-      'X-Request-ID',
-      'Access-Control-Allow-Origin',
-      'Access-Control-Allow-Headers',
-      'Access-Control-Request-Method',
-      'Access-Control-Request-Headers',
-      'X-Paystack-Signature', //payment webhooks
-    ],
-    exposedHeaders: ['Authorization', 'X-Total-Count'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
-    maxAge: 86400, // 24 hours
-  });
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'https://quickdish-frontend-2b6x.onrender.com'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'Origin',
+    'X-Requested-With'
+  ],
+});
+
 
   // Global prefix for all routes
   app.setGlobalPrefix('api');
